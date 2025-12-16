@@ -3,7 +3,7 @@ Metrics Module
 
 The metrics module provides specialized metrics for GTM analysis, including Responsibility Pattern (RP) fingerprints and coverage calculations.
 
-.. automodule:: gtmkit.metrics
+.. automodule:: chemographykit.metrics
    :members:
    :undoc-members:
    :show-inheritance:
@@ -14,11 +14,11 @@ Functions
 Responsibility Pattern Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: gtmkit.metrics.resp_to_pattern
+.. autofunction:: chemographykit.metrics.resp_to_pattern
 
-.. autofunction:: gtmkit.metrics.compute_rp_coverage
+.. autofunction:: chemographykit.metrics.compute_rp_coverage
 
-.. autofunction:: gtmkit.metrics.get_fingerprint_counts
+.. autofunction:: chemographykit.metrics.get_fingerprint_counts
 
 Usage Examples
 --------------
@@ -28,7 +28,7 @@ Creating RP Fingerprints
 
 .. code-block:: python
 
-   from gtmkit.metrics import resp_to_pattern
+   from chemographykit.metrics import resp_to_pattern
    import numpy as np
 
    # Example responsibility vector (from GTM projection)
@@ -47,7 +47,7 @@ Computing Coverage Between Datasets
 
 .. code-block:: python
 
-   from gtmkit.metrics import compute_rp_coverage
+   from chemographykit.metrics import compute_rp_coverage
    import numpy as np
 
    # Generate example RP fingerprints for reference and test sets
@@ -75,7 +75,7 @@ Working with Fingerprint Counts
 
 .. code-block:: python
 
-   from gtmkit.metrics import get_fingerprint_counts
+   from chemographykit.metrics import get_fingerprint_counts
    import numpy as np
 
    # Example RP fingerprints
@@ -97,8 +97,8 @@ Practical Workflow
 
 .. code-block:: python
 
-   from gtmkit.gtm import GTM
-   from gtmkit.metrics import resp_to_pattern, compute_rp_coverage
+   from chemographykit.gtm import GTM
+   from chemographykit.metrics import resp_to_pattern, compute_rp_coverage
    import torch
    import numpy as np
 

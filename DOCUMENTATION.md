@@ -1,6 +1,6 @@
-# GTMKit Documentation
+# ChemographyKit Documentation
 
-This document provides an overview of the comprehensive documentation system created for GTMKit, following the structure and best practices of the SynPlanner project.
+This document provides an overview of the comprehensive documentation system created for ChemographyKit, following the structure and best practices of the SynPlanner project.
 
 ## Documentation Structure
 
@@ -244,4 +244,4 @@ The documentation follows SynPlanner's successful patterns:
 - **Translation support**: Multi-language documentation
 - **Plugin ecosystem**: Documentation for extensions
 
-This comprehensive documentation system provides a solid foundation for GTMKit users and contributors, following the proven patterns established by successful scientific software projects like SynPlanner.
+This comprehensive documentation system provides a solid foundation for ChemographyKit users and contributors, following the proven patterns established by successful scientific software projects like SynPlanner.

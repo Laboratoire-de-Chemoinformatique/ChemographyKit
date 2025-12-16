@@ -19,25 +19,25 @@ Installation Methods
 Using PDM (Recommended)
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-PDM is the recommended package manager for GTMKit development and usage::
+PDM is the recommended package manager for ChemographyKit development and usage::
 
    git clone <repository-url>
-   cd GTMKit
+   cd ChemographyKit
    pdm install
 
-This will install GTMKit along with all required dependencies in a virtual environment.
+This will install ChemographyKit along with all required dependencies in a virtual environment.
 
 Using pip
 ~~~~~~~~~
 
-You can install GTMKit using pip. First, install the required dependencies::
+You can install ChemographyKit using pip. First, install the required dependencies::
 
    pip install numpy>=2.3.2 torch>=2.7.1 pandas>=2.3.2 altair>=5.5.0 plotly>=6.3.0 scikit-learn>=1.7.1 tqdm>=4.67.1
 
-Then install GTMKit from source::
+Then install ChemographyKit from source::
 
    git clone <repository-url>
-   cd GTMKit
+   cd ChemographyKit
    pip install -e .
 
 GPU Support
@@ -55,7 +55,7 @@ Development Installation
 For development purposes, install with additional development dependencies::
 
    git clone <repository-url>
-   cd GTMKit
+   cd ChemographyKit
    pdm install --dev
 
 This includes testing, linting, and documentation tools:
@@ -73,9 +73,9 @@ To verify your installation, run the test suite::
 
    pdm run pytest tests/ -v
 
-Or import GTMKit in Python::
+Or import ChemographyKit in Python::
 
-   python -c "import gtmkit; print('GTMKit installed successfully!')"
+   python -c "import chemographykit; print('ChemographyKit installed successfully!')"
 
 Troubleshooting
 --------------
@@ -89,14 +89,14 @@ Common Issues
 **CUDA out of memory**
    Reduce batch size or use CPU by setting ``device="cpu"`` in GTM initialization.
 
-**ModuleNotFoundError: No module named 'gtmkit'**
-   Ensure you've installed GTMKit in your current Python environment.
+**ModuleNotFoundError: No module named 'chemographykit'**
+   Ensure you've installed ChemographyKit in your current Python environment.
 
 Getting Help
 ~~~~~~~~~~~~
 
 If you encounter installation issues:
 
-1. Check the `GitHub Issues <https://github.com/your-username/GTMKit/issues>`_ page
+1. Check the `GitHub Issues <https://github.com/your-username/ChemographyKit/issues>`_ page
 2. Create a new issue with your system information and error message
 3. Contact the maintainers at varnek@unistra.fr

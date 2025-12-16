@@ -1,7 +1,7 @@
 Changelog
 =========
 
-All notable changes to GTMKit will be documented in this file.
+All notable changes to ChemographyKit will be documented in this file.
 
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
@@ -21,7 +21,7 @@ Added
 
 Added
 ~~~~~
-- Initial release of GTMKit
+- Initial release of ChemographyKit
 - Core GTM implementations (VanillaGTM and GTM with PCA initialization)
 - GPU acceleration with PyTorch backend
 - Comprehensive visualization suite:
@@ -141,16 +141,16 @@ We welcome contributions! See our :doc:`contributing` guide for details on:
 License
 =======
 
-GTMKit is released under the MIT License. See the LICENSE file for details.
+ChemographyKit is released under the MIT License. See the LICENSE file for details.
 
 Acknowledgments
 ==============
 
-GTMKit builds upon decades of research in:
+ChemographyKit builds upon decades of research in:
 
 - Generative Topographic Mapping (Bishop et al., 1998)
 - Probabilistic dimensionality reduction techniques
 - Chemical space analysis and visualization
 - GPU-accelerated scientific computing
 
-We thank the scientific community for their foundational work and the open-source community for the excellent tools that make GTMKit possible.
+We thank the scientific community for their foundational work and the open-source community for the excellent tools that make ChemographyKit possible.

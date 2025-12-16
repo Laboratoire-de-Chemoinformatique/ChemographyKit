@@ -1,7 +1,7 @@
-Contributing to GTMKit
+Contributing to ChemographyKit
 ======================
 
-We welcome contributions to GTMKit! This guide will help you get started with contributing to the project.
+We welcome contributions to ChemographyKit! This guide will help you get started with contributing to the project.
 
 Getting Started
 ---------------
@@ -9,8 +9,8 @@ Getting Started
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally::
 
-    git clone https://github.com/your-username/GTMKit.git
-    cd GTMKit
+    git clone https://github.com/your-username/ChemographyKit.git
+    cd ChemographyKit
 
 3. **Set up the development environment**::
 
@@ -33,7 +33,7 @@ When reporting bugs, please include:
 - A clear description of the problem
 - Steps to reproduce the issue
 - Expected vs actual behavior
-- Your system information (OS, Python version, GTMKit version)
+- Your system information (OS, Python version, ChemographyKit version)
 - Minimal code example demonstrating the bug
 
 Feature Requests
@@ -156,7 +156,7 @@ Run with coverage:
 
 .. code-block:: bash
 
-   pdm run pytest --cov=src/gtmkit --cov-report=html
+   pdm run pytest --cov=src/chemographykit --cov-report=html
 
 Run specific tests:
 
@@ -192,7 +192,7 @@ Example test structure:
 
    import pytest
    import torch
-   from gtmkit.gtm import GTM
+   from chemographykit.gtm import GTM
 
    class TestGTMTraining:
        """Test GTM training functionality."""
@@ -389,7 +389,7 @@ Common Issues
 Thank You!
 ---------
 
-Thank you for contributing to GTMKit! Your contributions help make the project better for everyone in the scientific computing and cheminformatics communities.
+Thank you for contributing to ChemographyKit! Your contributions help make the project better for everyone in the scientific computing and cheminformatics communities.
 
 Every contribution, no matter how small, is valuable and appreciated. Whether you're fixing a typo, adding a feature, or improving documentation, you're helping advance open-source scientific software.
 

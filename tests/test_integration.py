@@ -1,5 +1,5 @@
 """
-Integration tests for GTMKit.
+Integration tests for ChemographyKit.
 Tests end-to-end workflows and interactions between components.
 """
 
@@ -8,12 +8,12 @@ import pandas as pd
 import pytest
 import torch
 
-from gtmkit.gtm import GTM, VanillaGTM
-from gtmkit.metrics import compute_rp_coverage, resp_to_pattern
-from gtmkit.utils.classification import class_density_to_table, get_class_density_matrix
-from gtmkit.utils.density import density_to_table, get_density_matrix
-from gtmkit.utils.molecules import calculate_latent_coords
-from gtmkit.utils.regression import get_reg_density_matrix, reg_density_to_table
+from chemographykit.gtm import GTM, VanillaGTM
+from chemographykit.metrics import compute_rp_coverage, resp_to_pattern
+from chemographykit.utils.classification import class_density_to_table, get_class_density_matrix
+from chemographykit.utils.density import density_to_table, get_density_matrix
+from chemographykit.utils.molecules import calculate_latent_coords
+from chemographykit.utils.regression import get_reg_density_matrix, reg_density_to_table
 
 
 @pytest.mark.integration

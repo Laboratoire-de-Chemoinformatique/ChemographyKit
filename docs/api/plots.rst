@@ -8,7 +8,7 @@ Plotly Landscapes
 
 Interactive visualizations with smooth interpolation and hover information.
 
-.. automodule:: gtmkit.plots.plotly_landscapes
+.. automodule:: chemographykit.plots.plotly_landscapes
    :members:
    :undoc-members:
    :show-inheritance:
@@ -16,18 +16,18 @@ Interactive visualizations with smooth interpolation and hover information.
 Functions
 ~~~~~~~~~
 
-.. autofunction:: gtmkit.plots.plotly_landscapes.plotly_smooth_density_landscape
+.. autofunction:: chemographykit.plots.plotly_landscapes.plotly_smooth_density_landscape
 
-.. autofunction:: gtmkit.plots.plotly_landscapes.plotly_discrete_class_landscape
+.. autofunction:: chemographykit.plots.plotly_landscapes.plotly_discrete_class_landscape
 
-.. autofunction:: gtmkit.plots.plotly_landscapes.plotly_smooth_regression_landscape
+.. autofunction:: chemographykit.plots.plotly_landscapes.plotly_smooth_regression_landscape
 
 Altair Landscapes
 -----------------
 
 Static, publication-ready visualizations with discrete grid representation.
 
-.. automodule:: gtmkit.plots.altair_landscapes
+.. automodule:: chemographykit.plots.altair_landscapes
    :members:
    :undoc-members:
    :show-inheritance:
@@ -35,13 +35,13 @@ Static, publication-ready visualizations with discrete grid representation.
 Functions
 ~~~~~~~~~
 
-.. autofunction:: gtmkit.plots.altair_landscapes.altair_discrete_density_landscape
+.. autofunction:: chemographykit.plots.altair_landscapes.altair_discrete_density_landscape
 
-.. autofunction:: gtmkit.plots.altair_landscapes.altair_discrete_class_landscape
+.. autofunction:: chemographykit.plots.altair_landscapes.altair_discrete_class_landscape
 
-.. autofunction:: gtmkit.plots.altair_landscapes.altair_discrete_regression_landscape
+.. autofunction:: chemographykit.plots.altair_landscapes.altair_discrete_regression_landscape
 
-.. autofunction:: gtmkit.plots.altair_landscapes.altair_points_chart
+.. autofunction:: chemographykit.plots.altair_landscapes.altair_points_chart
 
 Usage Examples
 --------------
@@ -51,8 +51,8 @@ Interactive Density Landscape
 
 .. code-block:: python
 
-   from gtmkit.plots.plotly_landscapes import plotly_smooth_density_landscape
-   from gtmkit.utils.density import get_density_matrix, density_to_table
+   from chemographykit.plots.plotly_landscapes import plotly_smooth_density_landscape
+   from chemographykit.utils.density import get_density_matrix, density_to_table
    import numpy as np
 
    # Assuming you have responsibilities from GTM projection
@@ -77,8 +77,8 @@ Interactive Classification Landscape
 
 .. code-block:: python
 
-   from gtmkit.plots.plotly_landscapes import plotly_discrete_class_landscape
-   from gtmkit.utils.classification import get_class_density_matrix, class_density_to_table
+   from chemographykit.plots.plotly_landscapes import plotly_discrete_class_landscape
+   from chemographykit.utils.classification import get_class_density_matrix, class_density_to_table
 
    # Example classification data
    class_labels = np.random.choice([0, 1], size=1000)
@@ -116,8 +116,8 @@ Interactive Regression Landscape
 
 .. code-block:: python
 
-   from gtmkit.plots.plotly_landscapes import plotly_smooth_regression_landscape
-   from gtmkit.utils.regression import get_reg_density_matrix, reg_density_to_table
+   from chemographykit.plots.plotly_landscapes import plotly_smooth_regression_landscape
+   from chemographykit.utils.regression import get_reg_density_matrix, reg_density_to_table
 
    # Example regression data
    regression_values = np.random.normal(5.0, 2.0, size=1000)
@@ -148,7 +148,7 @@ Static Density Landscape
 
 .. code-block:: python
 
-   from gtmkit.plots.altair_landscapes import altair_discrete_density_landscape
+   from chemographykit.plots.altair_landscapes import altair_discrete_density_landscape
 
    # Create static density plot
    chart = altair_discrete_density_landscape(
@@ -164,7 +164,7 @@ Static Classification Landscape
 
 .. code-block:: python
 
-   from gtmkit.plots.altair_landscapes import altair_discrete_class_landscape
+   from chemographykit.plots.altair_landscapes import altair_discrete_class_landscape
 
    # Create static classification plot
    chart = altair_discrete_class_landscape(
@@ -182,7 +182,7 @@ Static Regression Landscape
 
 .. code-block:: python
 
-   from gtmkit.plots.altair_landscapes import altair_discrete_regression_landscape
+   from chemographykit.plots.altair_landscapes import altair_discrete_regression_landscape
 
    # Create static regression plot
    chart = altair_discrete_regression_landscape(
@@ -199,8 +199,8 @@ Overlay Molecular Points
 
 .. code-block:: python
 
-   from gtmkit.plots.altair_landscapes import altair_points_chart
-   from gtmkit.utils.molecules import calculate_latent_coords
+   from chemographykit.plots.altair_landscapes import altair_points_chart
+   from chemographykit.utils.molecules import calculate_latent_coords
 
    # Calculate molecular coordinates
    mol_coords = calculate_latent_coords(

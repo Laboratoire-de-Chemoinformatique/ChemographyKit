@@ -1,12 +1,12 @@
 """
-Tests for metrics functionality in GTMKit.
+Tests for metrics functionality in ChemographyKit.
 Tests responsibility pattern fingerprints and coverage calculations.
 """
 
 import numpy as np
 import pytest
 
-from gtmkit.metrics import compute_rp_coverage, get_fingerprint_counts, resp_to_pattern
+from chemographykit.metrics import compute_rp_coverage, get_fingerprint_counts, resp_to_pattern
 
 
 class TestRespToPattern:

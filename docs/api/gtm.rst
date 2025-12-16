@@ -3,7 +3,7 @@ GTM Module
 
 The core GTM module provides implementations of Generative Topographic Mapping algorithms.
 
-.. automodule:: gtmkit.gtm
+.. automodule:: chemographykit.gtm
    :members:
    :undoc-members:
    :show-inheritance:
@@ -14,7 +14,7 @@ Classes
 BaseGTM
 ~~~~~~~
 
-.. autoclass:: gtmkit.gtm.BaseGTM
+.. autoclass:: chemographykit.gtm.BaseGTM
    :members:
    :undoc-members:
    :show-inheritance:
@@ -22,7 +22,7 @@ BaseGTM
 VanillaGTM
 ~~~~~~~~~~
 
-.. autoclass:: gtmkit.gtm.VanillaGTM
+.. autoclass:: chemographykit.gtm.VanillaGTM
    :members:
    :undoc-members:
    :show-inheritance:
@@ -30,7 +30,7 @@ VanillaGTM
 GTM
 ~~~
 
-.. autoclass:: gtmkit.gtm.GTM
+.. autoclass:: chemographykit.gtm.GTM
    :members:
    :undoc-members:
    :show-inheritance:
@@ -38,7 +38,7 @@ GTM
 DataStandardizer
 ~~~~~~~~~~~~~~~
 
-.. autoclass:: gtmkit.gtm.DataStandardizer
+.. autoclass:: chemographykit.gtm.DataStandardizer
    :members:
    :undoc-members:
    :show-inheritance:
@@ -46,11 +46,11 @@ DataStandardizer
 Functions
 ---------
 
-.. autofunction:: gtmkit.gtm.squared_euclidean_distance
+.. autofunction:: chemographykit.gtm.squared_euclidean_distance
 
-.. autofunction:: gtmkit.gtm.get_gtm_grid
+.. autofunction:: chemographykit.gtm.get_gtm_grid
 
-.. autofunction:: gtmkit.gtm.torch_pca
+.. autofunction:: chemographykit.gtm.torch_pca
 
 Usage Examples
 --------------
@@ -60,7 +60,7 @@ Basic GTM Training
 
 .. code-block:: python
 
-   from gtmkit.gtm import GTM
+   from chemographykit.gtm import GTM
    import torch
 
    # Generate sample data
@@ -78,7 +78,7 @@ VanillaGTM vs GTM
 
 .. code-block:: python
 
-   from gtmkit.gtm import VanillaGTM, GTM
+   from chemographykit.gtm import VanillaGTM, GTM
 
    # VanillaGTM uses random initialization
    vanilla_gtm = VanillaGTM(num_nodes=100, num_basis_functions=25)
@@ -91,7 +91,7 @@ Data Standardization
 
 .. code-block:: python
 
-   from gtmkit.gtm import DataStandardizer
+   from chemographykit.gtm import DataStandardizer
    import torch
 
    # Create standardizer

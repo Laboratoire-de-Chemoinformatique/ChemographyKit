@@ -1,7 +1,7 @@
 Tutorials
 =========
 
-This section provides comprehensive tutorials to help you get the most out of GTMKit. The tutorials are organized from basic concepts to advanced applications.
+This section provides comprehensive tutorials to help you get the most out of ChemographyKit. The tutorials are organized from basic concepts to advanced applications.
 
 .. toctree::
    :maxdepth: 2
@@ -96,7 +96,7 @@ Prerequisites
 
 Before starting the tutorials, make sure you have:
 
-- GTMKit properly installed (see :doc:`../installation`)
+- ChemographyKit properly installed (see :doc:`../installation`)
 - Basic knowledge of Python and NumPy
 - Understanding of machine learning concepts
 - Familiarity with chemical informatics (for chemistry applications)
@@ -129,13 +129,13 @@ If you encounter issues while following the tutorials:
 
 1. Check the :doc:`../api/gtm` for detailed API documentation
 2. Review the :doc:`../quickstart` for basic usage patterns
-3. Submit issues on `GitHub <https://github.com/your-username/GTMKit/issues>`_
+3. Submit issues on `GitHub <https://github.com/your-username/ChemographyKit/issues>`_
 4. Contact the maintainers at varnek@unistra.fr
 
 Data Files
 ==========
 
-Some tutorials require example data files. These can be found in the ``tutorials/data/`` directory of the GTMKit repository, or you can generate synthetic data using the provided code snippets.
+Some tutorials require example data files. These can be found in the ``tutorials/data/`` directory of the ChemographyKit repository, or you can generate synthetic data using the provided code snippets.
 
 Jupyter Notebooks
 =================

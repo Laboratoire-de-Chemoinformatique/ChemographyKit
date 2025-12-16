@@ -1,5 +1,5 @@
 """
-Pytest configuration and shared fixtures for GTMKit tests.
+Pytest configuration and shared fixtures for ChemographyKit tests.
 """
 
 import warnings

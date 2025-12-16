@@ -1,7 +1,7 @@
 Examples
 ========
 
-This section provides practical examples demonstrating GTMKit's capabilities across different domains and use cases.
+This section provides practical examples demonstrating ChemographyKit's capabilities across different domains and use cases.
 
 .. toctree::
    :maxdepth: 2
@@ -45,7 +45,7 @@ Example Categories
 Basic Examples
 --------------
 
-These examples demonstrate fundamental GTMKit operations:
+These examples demonstrate fundamental ChemographyKit operations:
 
 1. **Simple Density Mapping**: Basic density landscape creation and visualization
 2. **Binary Classification**: Two-class classification landscape analysis
@@ -88,7 +88,7 @@ Running the Examples
 Prerequisites
 -------------
 
-Make sure you have GTMKit installed with all dependencies:
+Make sure you have ChemographyKit installed with all dependencies:
 
 .. code-block:: bash
 
@@ -168,7 +168,7 @@ If you have questions about the examples:
 
 1. Check the :doc:`../tutorials/index` for detailed explanations
 2. Review the :doc:`../api/gtm` for API documentation
-3. Submit issues on `GitHub <https://github.com/your-username/GTMKit/issues>`_
+3. Submit issues on `GitHub <https://github.com/your-username/ChemographyKit/issues>`_
 4. Contact the maintainers at varnek@unistra.fr
 
 Performance Notes
@@ -200,4 +200,4 @@ After exploring the examples:
 3. Combine multiple examples for complex workflows
 4. Contribute your own examples to the community
 
-The examples are designed to be educational and practical, providing a solid foundation for using GTMKit in your own projects.
+The examples are designed to be educational and practical, providing a solid foundation for using ChemographyKit in your own projects.

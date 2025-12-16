@@ -1,9 +1,9 @@
-GTMKit Documentation
+ChemographyKit Documentation
 ====================
 
 .. image:: https://img.shields.io/badge/License-MIT-brightgreen
    :alt: License
-   :target: https://github.com/your-username/GTMKit/blob/main/LICENSE
+   :target: https://github.com/your-username/ChemographyKit/blob/main/LICENSE
 
 .. image:: https://img.shields.io/badge/Python-3.11+-blue
    :alt: Python
@@ -16,7 +16,7 @@ GTMKit Documentation
 
 **Mapping high-dimensional biology & chemistry into intuitive, navigable spaces with Generative Topographic Mapping (GTM).**
 
-GTMKit is a comprehensive Python library for exploring chemical space and high-dimensional data using **Generative Topographic Mapping (GTM)**. GTM is a probabilistic dimensionality reduction technique that creates non-linear mappings from high-dimensional data spaces to interpretable low-dimensional latent spaces using a generative model with radial basis functions.
+ChemographyKit is a comprehensive Python library for exploring chemical space and high-dimensional data using **Generative Topographic Mapping (GTM)**. GTM is a probabilistic dimensionality reduction technique that creates non-linear mappings from high-dimensional data spaces to interpretable low-dimensional latent spaces using a generative model with radial basis functions.
 
 This is a **PyTorch-based** implementation of the GTM algorithm that runs on **GPU**, and includes functions for building landscapes and GTM-specific metrics.
 
@@ -50,7 +50,7 @@ Installation
 Using PDM (Recommended)::
 
    git clone <repository-url>
-   cd GTMKit
+   cd ChemographyKit
    pdm install
 
 Using pip::
@@ -64,7 +64,7 @@ Basic Usage
 
    import torch
    import numpy as np
-   from gtmkit.gtm import GTM
+   from chemographykit.gtm import GTM
 
    # Generate sample data
    data = torch.randn(1000, 50, dtype=torch.float64)
@@ -159,13 +159,13 @@ Chemical Space & Big Chemical Data
 Citation
 ========
 
-If you use GTMKit in your research, please cite our work::
+If you use ChemographyKit in your research, please cite our work::
 
-   @software{gtmkit2025,
-       title = {GTMKit: A Python Library for Generative Topographic Mapping},
+   @software{chemographykit2025,
+       title = {ChemographyKit: A Python Library for Generative Topographic Mapping},
        author = {Akhmetshin, Tagir and Plyer, Louis and Orlov, Alexey and Varnek, Alexandre},
        year = {2025},
-       url = {https://github.com/your-username/GTMKit}
+       url = {https://github.com/your-username/ChemographyKit}
    }
 
 Contact

@@ -13,7 +13,7 @@ from pathlib import Path
 # Add the source directory to the Python path
 sys.path.insert(0, os.path.abspath("../src"))
 
-project = "GTMKit"
+project = "ChemographyKit"
 copyright = "2025, Tagir Akhmetshin, Louis Plyer, Alexey Orlov, Alexandre Varnek"
 author = "Tagir Akhmetshin, Louis Plyer, Alexey Orlov, Alexandre Varnek"
 release = "0.1.0"
@@ -138,7 +138,7 @@ html_css_files = [
 html_context = {
     "display_github": True,
     "github_user": "your-username",  # Update with actual GitHub username
-    "github_repo": "GTMKit",
+    "github_repo": "ChemographyKit",
     "github_version": "main",
     "conf_py_path": "/docs/",
 }

@@ -6,7 +6,7 @@ The utils module contains specialized utilities for different types of analysis 
 Classification Utils
 -------------------
 
-.. automodule:: gtmkit.utils.classification
+.. automodule:: chemographykit.utils.classification
    :members:
    :undoc-members:
    :show-inheritance:
@@ -14,18 +14,18 @@ Classification Utils
 Functions
 ~~~~~~~~~
 
-.. autofunction:: gtmkit.utils.classification.get_class_density_matrix
+.. autofunction:: chemographykit.utils.classification.get_class_density_matrix
 
-.. autofunction:: gtmkit.utils.classification.class_density_to_table
+.. autofunction:: chemographykit.utils.classification.class_density_to_table
 
-.. autofunction:: gtmkit.utils.classification.class_prob_from_density
+.. autofunction:: chemographykit.utils.classification.class_prob_from_density
 
-.. autofunction:: gtmkit.utils.classification.get_class_inds
+.. autofunction:: chemographykit.utils.classification.get_class_inds
 
 Regression Utils
 ---------------
 
-.. automodule:: gtmkit.utils.regression
+.. automodule:: chemographykit.utils.regression
    :members:
    :undoc-members:
    :show-inheritance:
@@ -33,16 +33,16 @@ Regression Utils
 Functions
 ~~~~~~~~~
 
-.. autofunction:: gtmkit.utils.regression.get_reg_density_matrix
+.. autofunction:: chemographykit.utils.regression.get_reg_density_matrix
 
-.. autofunction:: gtmkit.utils.regression.reg_density_to_table
+.. autofunction:: chemographykit.utils.regression.reg_density_to_table
 
-.. autofunction:: gtmkit.utils.regression.norm_reg_density
+.. autofunction:: chemographykit.utils.regression.norm_reg_density
 
 Density Utils
 -------------
 
-.. automodule:: gtmkit.utils.density
+.. automodule:: chemographykit.utils.density
    :members:
    :undoc-members:
    :show-inheritance:
@@ -50,14 +50,14 @@ Density Utils
 Functions
 ~~~~~~~~~
 
-.. autofunction:: gtmkit.utils.density.get_density_matrix
+.. autofunction:: chemographykit.utils.density.get_density_matrix
 
-.. autofunction:: gtmkit.utils.density.density_to_table
+.. autofunction:: chemographykit.utils.density.density_to_table
 
 Molecules Utils
 --------------
 
-.. automodule:: gtmkit.utils.molecules
+.. automodule:: chemographykit.utils.molecules
    :members:
    :undoc-members:
    :show-inheritance:
@@ -65,7 +65,7 @@ Molecules Utils
 Functions
 ~~~~~~~~~
 
-.. autofunction:: gtmkit.utils.molecules.calculate_latent_coords
+.. autofunction:: chemographykit.utils.molecules.calculate_latent_coords
 
 Usage Examples
 --------------
@@ -75,7 +75,7 @@ Classification Analysis
 
 .. code-block:: python
 
-   from gtmkit.utils.classification import get_class_density_matrix, class_density_to_table
+   from chemographykit.utils.classification import get_class_density_matrix, class_density_to_table
    import numpy as np
 
    # Example responsibilities and binary labels
@@ -122,7 +122,7 @@ Regression Analysis
 
 .. code-block:: python
 
-   from gtmkit.utils.regression import get_reg_density_matrix, reg_density_to_table
+   from chemographykit.utils.regression import get_reg_density_matrix, reg_density_to_table
 
    # Example regression values
    regression_values = np.random.normal(5.0, 2.0, size=1000)
@@ -143,7 +143,7 @@ Density Analysis
 
 .. code-block:: python
 
-   from gtmkit.utils.density import get_density_matrix, density_to_table
+   from chemographykit.utils.density import get_density_matrix, density_to_table
 
    # Calculate density matrix
    density = get_density_matrix(responsibilities)
@@ -158,7 +158,7 @@ Molecular Coordinates
 
 .. code-block:: python
 
-   from gtmkit.utils.molecules import calculate_latent_coords
+   from chemographykit.utils.molecules import calculate_latent_coords
 
    # Calculate molecular coordinates for plotting
    mol_coords = calculate_latent_coords(
@@ -176,9 +176,9 @@ Advanced Usage
 .. code-block:: python
 
    # Complete workflow for classification landscape
-   from gtmkit.gtm import GTM
-   from gtmkit.utils.classification import get_class_density_matrix, class_density_to_table
-   from gtmkit.plots.plotly_landscapes import plotly_discrete_class_landscape
+   from chemographykit.gtm import GTM
+   from chemographykit.utils.classification import get_class_density_matrix, class_density_to_table
+   from chemographykit.plots.plotly_landscapes import plotly_discrete_class_landscape
    import torch
    import numpy as np
 

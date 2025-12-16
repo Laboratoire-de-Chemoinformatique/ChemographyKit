@@ -1,7 +1,7 @@
 License
 =======
 
-GTMKit is released under the MIT License.
+ChemographyKit is released under the MIT License.
 
 MIT License
 -----------
@@ -29,7 +29,7 @@ SOFTWARE.
 Third-Party Licenses
 --------------------
 
-GTMKit depends on several open-source libraries, each with their own licenses:
+ChemographyKit depends on several open-source libraries, each with their own licenses:
 
 PyTorch
 ~~~~~~~
@@ -76,22 +76,22 @@ tqdm
 Attribution
 -----------
 
-If you use GTMKit in your research, please cite:
+If you use ChemographyKit in your research, please cite:
 
 .. code-block:: bibtex
 
-   @software{gtmkit2025,
-       title = {GTMKit: A Python Library for Generative Topographic Mapping},
+   @software{chemographykit2025,
+       title = {ChemographyKit: A Python Library for Generative Topographic Mapping},
        author = {Akhmetshin, Tagir and Plyer, Louis and Orlov, Alexey and Varnek, Alexandre},
        year = {2025},
-       url = {https://github.com/your-username/GTMKit},
+       url = {https://github.com/your-username/ChemographyKit},
        license = {MIT}
    }
 
 Academic References
 ------------------
 
-GTMKit implements algorithms described in the following academic papers:
+ChemographyKit implements algorithms described in the following academic papers:
 
 **Original GTM Paper:**
 
@@ -110,11 +110,11 @@ Bishop, C. M., Svensén, M., & Williams, C. K. (1998). GTM: The generative topog
 Contributing to License Information
 ----------------------------------
 
-If you contribute code to GTMKit:
+If you contribute code to ChemographyKit:
 
 1. Your contributions will be licensed under the same MIT License
 2. You retain copyright to your contributions
-3. You grant GTMKit maintainers permission to use your contributions under the MIT License
+3. You grant ChemographyKit maintainers permission to use your contributions under the MIT License
 4. Significant contributors may be added to the copyright notice
 
 Questions
@@ -139,4 +139,4 @@ The MIT License requires:
 - License and copyright notice inclusion
 - No liability or warranty claims against the authors
 
-This makes GTMKit suitable for both academic research and commercial applications.
+This makes ChemographyKit suitable for both academic research and commercial applications.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple build script for GTMKit documentation.
+Simple build script for ChemographyKit documentation.
 
 This script provides a convenient way to build the documentation
 with proper error handling and cleanup.
@@ -107,7 +107,7 @@ def check_links(source_dir, build_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build GTMKit documentation")
+    parser = argparse.ArgumentParser(description="Build ChemographyKit documentation")
     parser.add_argument(
         "command",
         choices=["build", "clean", "serve", "linkcheck", "livehtml"],

@@ -1,4 +1,4 @@
-# GTMKit
+# ChemographyKit
 
 > Mapping high-dimensional biology & chemistry into intuitive, navigable spaces with **Generative Topographic Mapping (GTM)**.
 
@@ -65,7 +65,7 @@
 
 ## Overview
 
-GTMKit is a comprehensive Python library for exploring chemical space and high-dimensional data using **Generative Topographic Mapping (GTM)**. GTM is a probabilistic dimensionality reduction technique that creates non-linear mappings from high-dimensional data spaces to interpretable low-dimensional latent spaces using a generative model with radial basis functions. This is a **PyTorch-based** implementation of the GTM algorithm that runs on **GPU**, and includes functions for building landscapes and GTM-specific metrics.
+ChemographyKit is a comprehensive Python library for exploring chemical space and high-dimensional data using **Generative Topographic Mapping (GTM)**. GTM is a probabilistic dimensionality reduction technique that creates non-linear mappings from high-dimensional data spaces to interpretable low-dimensional latent spaces using a generative model with radial basis functions. This is a **PyTorch-based** implementation of the GTM algorithm that runs on **GPU**, and includes functions for building landscapes and GTM-specific metrics.
 
 > \[!TIP]
 > Pair GTM maps with interactive notebooks or dashboards to let users zoom from global chemical space down to neighborhood-level structure–activity patterns.
@@ -108,8 +108,8 @@ GTMKit is a comprehensive Python library for exploring chemical space and high-d
 ### Using PDM (Recommended)
 
 ```bash
-git clone https://github.com/your-username/GTMKit.git
-cd GTMKit
+git clone https://github.com/your-username/ChemographyKit.git
+cd ChemographyKit
 pdm install
 ```
 
@@ -117,7 +117,7 @@ pdm install
 
 ```bash
 git clone <repository-url>
-cd GTMKit
+cd ChemographyKit
 pip install -e .
 ```
 
@@ -139,7 +139,7 @@ pip install numpy>=2.3.2 torch>=2.7.1 pandas>=2.3.2 altair>=5.5.0 plotly>=6.3.0 
 ```python
 import torch
 import numpy as np
-from gtmkit.gtm import GTM
+from chemographykit.gtm import GTM
 
 # Generate sample data
 data = torch.randn(1000, 50, dtype=torch.float64)  # 1000 samples, 50 features
@@ -174,10 +174,10 @@ import altair as alt
 from sklearn.datasets import make_s_curve
 
 # GTM and utilities
-from gtmkit.gtm import GTM
-from gtmkit.utils.molecules import calculate_latent_coords
-from gtmkit.utils.regression import get_reg_density_matrix, reg_density_to_table
-from gtmkit.plots.altair_landscapes import (
+from chemographykit.gtm import GTM
+from chemographykit.utils.molecules import calculate_latent_coords
+from chemographykit.utils.regression import get_reg_density_matrix, reg_density_to_table
+from chemographykit.plots.altair_landscapes import (
     altair_points_chart,
     altair_discrete_regression_landscape,
 )
@@ -276,7 +276,7 @@ The tutorial demonstrates:
 ### Responsibility Pattern (RP) Fingerprints
 
 ```python
-from gtmkit.metrics import resp_to_pattern, compute_rp_coverage
+from chemographykit.metrics import resp_to_pattern, compute_rp_coverage
 
 # Convert responsibilities to RP fingerprints
 rp_fingerprints = np.array([
@@ -295,7 +295,7 @@ print(f"Weighted coverage: {coverage:.3f}")
 ### Molecular Coordinate Calculation
 
 ```python
-from gtmkit.utils.molecules import calculate_latent_coords
+from chemographykit.utils.molecules import calculate_latent_coords
 
 # Calculate molecular coordinates for plotting
 mol_coords = calculate_latent_coords(
@@ -309,7 +309,7 @@ print(mol_coords.head())
 ### Using Altair for Static Visualizations
 
 ```python
-from gtmkit.plots.altair_landscapes import (
+from chemographykit.plots.altair_landscapes import (
     altair_discrete_density_landscape,
     altair_discrete_class_landscape,
     altair_points_chart
@@ -402,7 +402,7 @@ pdm run pytest tests/ -v
 Run with coverage:
 
 ```bash
-pdm run pytest tests/ --cov=src/gtmkit --cov-report=html
+pdm run pytest tests/ --cov=src/chemographykit --cov-report=html
 ```
 
 ---

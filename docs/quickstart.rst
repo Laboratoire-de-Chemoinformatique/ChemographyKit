@@ -1,7 +1,7 @@
 Quick Start Guide
 ================
 
-This guide will get you up and running with GTMKit in just a few minutes.
+This guide will get you up and running with ChemographyKit in just a few minutes.
 
 Basic GTM Training
 ------------------
@@ -12,7 +12,7 @@ Let's start with a simple example of training a GTM model:
 
    import torch
    import numpy as np
-   from gtmkit.gtm import GTM
+   from chemographykit.gtm import GTM
 
    # Generate sample data (1000 samples, 50 features)
    data = torch.randn(1000, 50, dtype=torch.float64)
@@ -45,8 +45,8 @@ Create density landscapes to visualize data distribution:
 .. code-block:: python
 
    import numpy as np
-   from gtmkit.utils.density import get_density_matrix, density_to_table
-   from gtmkit.plots.plotly_landscapes import plotly_smooth_density_landscape
+   from chemographykit.utils.density import get_density_matrix, density_to_table
+   from chemographykit.plots.plotly_landscapes import plotly_smooth_density_landscape
 
    # Calculate density matrix
    responsibilities_np = responsibilities.T.cpu().numpy()
@@ -70,8 +70,8 @@ Visualize classification patterns:
 
 .. code-block:: python
 
-   from gtmkit.utils.classification import get_class_density_matrix, class_density_to_table
-   from gtmkit.plots.plotly_landscapes import plotly_discrete_class_landscape
+   from chemographykit.utils.classification import get_class_density_matrix, class_density_to_table
+   from chemographykit.plots.plotly_landscapes import plotly_discrete_class_landscape
 
    # Sample binary classification labels
    class_labels = np.random.choice([0, 1], size=1000)
@@ -110,8 +110,8 @@ Visualize continuous properties:
 
 .. code-block:: python
 
-   from gtmkit.utils.regression import get_reg_density_matrix, reg_density_to_table
-   from gtmkit.plots.plotly_landscapes import plotly_smooth_regression_landscape
+   from chemographykit.utils.regression import get_reg_density_matrix, reg_density_to_table
+   from chemographykit.plots.plotly_landscapes import plotly_smooth_regression_landscape
 
    # Sample regression values
    regression_values = np.random.normal(5.0, 2.0, size=1000)
@@ -140,11 +140,11 @@ Advanced Features
 Responsibility Pattern (RP) Fingerprints
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-GTMKit provides unique fingerprints based on responsibility patterns:
+ChemographyKit provides unique fingerprints based on responsibility patterns:
 
 .. code-block:: python
 
-   from gtmkit.metrics import resp_to_pattern, compute_rp_coverage
+   from chemographykit.metrics import resp_to_pattern, compute_rp_coverage
 
    # Convert responsibilities to RP fingerprints
    rp_fingerprints = np.array([
@@ -166,7 +166,7 @@ Calculate molecular coordinates for plotting:
 
 .. code-block:: python
 
-   from gtmkit.utils.molecules import calculate_latent_coords
+   from chemographykit.utils.molecules import calculate_latent_coords
 
    # Calculate molecular coordinates
    mol_coords = calculate_latent_coords(
@@ -183,7 +183,7 @@ Create publication-ready static plots:
 
 .. code-block:: python
 
-   from gtmkit.plots.altair_landscapes import (
+   from chemographykit.plots.altair_landscapes import (
        altair_discrete_density_landscape,
        altair_discrete_class_landscape,
        altair_points_chart

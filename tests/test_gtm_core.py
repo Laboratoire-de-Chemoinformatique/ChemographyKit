@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 
-from gtmkit.gtm import GTM, DataStandardizer, VanillaGTM
+from chemographykit.gtm import GTM, DataStandardizer, VanillaGTM
 
 
 class TestDataStandardizer:
@@ -402,7 +402,7 @@ class TestEdgeCases:
         )
 
         # Mock the logging to capture iterations
-        with patch("gtmkit.gtm.logging") as mock_logging:
+        with patch("chemographykit.gtm.logging") as mock_logging:
             gtm.fit(data)
             # Should have stopped before max_iter due to convergence
             # (This is hard to test precisely without access to internal state)

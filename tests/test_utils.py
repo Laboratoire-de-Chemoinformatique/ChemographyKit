@@ -1,5 +1,5 @@
 """
-Tests for utility functions in GTMKit.
+Tests for utility functions in ChemographyKit.
 Covers density, classification, regression, and molecule utilities.
 """
 
@@ -9,20 +9,20 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from gtmkit.utils.classification import (
+from chemographykit.utils.classification import (
     class_density_to_table,
     class_prob_from_density,
     get_class_density_matrix,
     get_class_inds,
 )
-from gtmkit.utils.density import (
+from chemographykit.utils.density import (
     calculate_grid,
     density_to_table,
     filter_by_threshold,
     get_density_matrix,
 )
-from gtmkit.utils.molecules import calculate_latent_coords
-from gtmkit.utils.regression import (
+from chemographykit.utils.molecules import calculate_latent_coords
+from chemographykit.utils.regression import (
     get_reg_density_matrix,
     norm_reg_density,
     reg_density_to_table,

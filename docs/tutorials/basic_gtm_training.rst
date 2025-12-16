@@ -1,12 +1,12 @@
 Basic GTM Training
 ==================
 
-This tutorial covers the fundamentals of training Generative Topographic Mapping (GTM) models using GTMKit. You'll learn about different GTM variants, initialization strategies, and basic usage patterns.
+This tutorial covers the fundamentals of training Generative Topographic Mapping (GTM) models using ChemographyKit. You'll learn about different GTM variants, initialization strategies, and basic usage patterns.
 
 Overview
 --------
 
-GTM is a probabilistic dimensionality reduction technique that maps high-dimensional data to a lower-dimensional latent space using a generative model. GTMKit provides two main implementations:
+GTM is a probabilistic dimensionality reduction technique that maps high-dimensional data to a lower-dimensional latent space using a generative model. ChemographyKit provides two main implementations:
 
 - **VanillaGTM**: Basic implementation with random initialization
 - **GTM**: Enhanced version with PCA-based initialization for better convergence
@@ -19,7 +19,7 @@ Prerequisites
    import torch
    import numpy as np
    import matplotlib.pyplot as plt
-   from gtmkit.gtm import VanillaGTM, GTM
+   from chemographykit.gtm import VanillaGTM, GTM
 
 Generating Sample Data
 ---------------------
@@ -308,7 +308,7 @@ Save and load trained models:
 
    # Restore standardizer if it was used
    if loaded_state['standardizer_state']:
-       from gtmkit.gtm import DataStandardizer
+       from chemographykit.gtm import DataStandardizer
        loaded_gtm.standardizer = DataStandardizer()
        loaded_gtm.standardizer.__dict__.update(loaded_state['standardizer_state'])
 
