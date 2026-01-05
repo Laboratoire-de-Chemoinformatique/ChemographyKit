@@ -664,7 +664,7 @@ class VanillaGTM(BaseGTM, ABC):
         # Calculate the distance matrix in the data space
         self._log_matrix_stats(distances, "First distances RBFs-data in N-dimensions")
 
-        pbar = tqdm(range(self.max_iter))
+        pbar = tqdm(range(self.max_iter),colour="blue")
         for index, _ in enumerate(pbar):
             responsibilities, llhs = self.e_step(data, distances)
             llh = torch.mean(llhs)  # normalisation by data
@@ -681,6 +681,8 @@ class VanillaGTM(BaseGTM, ABC):
 
             # Convergence check part
             if llh_diff < self.tolerance:  # Helena checks for several cycles
+                pbar.update(self.max_iter-pbar.n)
+                pbar.close()
                 break
             llh_old = llh
             if index < self.max_iter - 1:
