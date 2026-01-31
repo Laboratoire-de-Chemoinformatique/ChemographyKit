@@ -6,13 +6,3 @@ build/
 *.egg-info/
 *.whl
 *.tar.gz
-__pycache__/
-
-
-
-dist/
-build/
-*.egg-info/
-*.whl
-*.tar.gz
-__pycache__/
