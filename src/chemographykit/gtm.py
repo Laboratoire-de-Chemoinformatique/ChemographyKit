@@ -385,6 +385,10 @@ class VanillaGTM(BaseGTM, ABC):
             assert round(
                 np.cbrt(num_basis_functions)
             ).is_integer(), "num_basis_functions must be a cube"
+        if num_basis_functions > num_nodes:
+            raise ValueError(
+                f"num_basis_functions must be <= num_nodes (got {num_basis_functions} > {num_nodes})"
+            )
         self.num_nodes: int = num_nodes
         self.num_basis_functions: int = num_basis_functions
         self.basis_width: float = basis_width
