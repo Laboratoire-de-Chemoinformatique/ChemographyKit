@@ -1013,7 +1013,6 @@ class GTM(VanillaGTM):
         Args:
             x: Training data tensor of shape (num_samples, num_features)
         """
-        
         x = x.to(self.device, dtype=torch.float64)
 
         if self.standardize:
