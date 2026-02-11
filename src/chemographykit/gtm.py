@@ -702,7 +702,7 @@ class VanillaGTM(BaseGTM, ABC):
         Args:
             x: Training data tensor of shape (num_samples, num_features)
         """
-        x = x.to(self.device)
+        x = x.to(self.device, dtype=torch.float64)
         # Calculate mean and standard deviation along each column (axis 0)
 
         if self.standardize:
@@ -734,7 +734,7 @@ class VanillaGTM(BaseGTM, ABC):
                 - responsibilities: Responsibility matrix of shape (num_nodes, num_samples)
                 - llhs: Log-likelihood values for each data point
         """
-        x = x.to(self.device)
+        x = x.to(self.device, dtype=torch.float64)
         if self.standardize:
             x = self._standardize(x, with_mean=True, with_std=True)
         distance = self.kernel(self.phi @ self.weights, x)
@@ -1013,7 +1013,8 @@ class GTM(VanillaGTM):
         Args:
             x: Training data tensor of shape (num_samples, num_features)
         """
-        x = x.to(self.device)
+        
+        x = x.to(self.device, dtype=torch.float64)
 
         if self.standardize:
             # Calculate mean and standard deviation along each column (axis 0)
