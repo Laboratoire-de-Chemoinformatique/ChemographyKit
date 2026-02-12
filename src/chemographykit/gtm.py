@@ -806,6 +806,8 @@ class GTM(VanillaGTM):
         self.pca_engine: str = pca_engine
         self.pca_scale: bool = pca_scale
         self.pca_lowrank: bool = pca_lowrank
+        self.eigenvectors: Optional[torch.Tensor] = None
+        self.eigenvalues: Optional[torch.Tensor] = None
         super(GTM, self).__init__(*args, **kwargs)
 
     def _init_beta_mixture_components(self) -> torch.Tensor:
@@ -1023,6 +1025,9 @@ class GTM(VanillaGTM):
         self.data_std = torch.std(x, dim=0)
         # initialise weights and beta from the data
         eigenvectors, eigenvalues = self._get_pca(x)
+        self.eigenvectors = eigenvectors.detach().clone()
+        self.eigenvalues = eigenvalues.detach().clone()
+
         self.weights = self._init_weights(eigenvectors)
         self.weights[-1, :] = self.data_mean
         self.beta = self._init_beta(eigenvalues)
