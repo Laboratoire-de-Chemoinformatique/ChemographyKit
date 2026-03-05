@@ -34,11 +34,11 @@ class TestGTMWorkflow:
 
         # Test projection
         responsibilities, llhs = gtm.project(medium_dataset)
-        assert responsibilities.shape == (9, 100)  # 9 nodes, 100 samples
+        assert responsibilities.shape == (100, 9)  # 100 samples, 9 nodes
         assert llhs.shape == (100,)
 
         # Verify responsibilities sum to 1
-        resp_sums = responsibilities.sum(dim=0)
+        resp_sums = responsibilities.sum(dim=1)
         assert torch.allclose(
             resp_sums, torch.ones(100, dtype=torch.float64), atol=1e-6
         )
@@ -73,9 +73,7 @@ class TestGTMWorkflow:
 
         # Get responsibilities
         responsibilities, _ = gtm.project(medium_dataset)
-        resp_np = (
-            responsibilities.detach().cpu().numpy().T
-        )  # Convert to (samples, nodes)
+        resp_np = responsibilities.detach().cpu().numpy()  # (samples, nodes)
 
         # Calculate density
         density = get_density_matrix(resp_np)
@@ -107,7 +105,7 @@ class TestGTMWorkflow:
 
         # Get responsibilities
         responsibilities, _ = gtm.project(data)
-        resp_np = responsibilities.detach().cpu().numpy().T
+        resp_np = responsibilities.detach().cpu().numpy()
 
         # Classification analysis
         density, class_density, class_prob = get_class_density_matrix(
@@ -157,7 +155,7 @@ class TestGTMWorkflow:
 
         # Get responsibilities
         responsibilities, _ = gtm.project(medium_dataset)
-        resp_np = responsibilities.detach().cpu().numpy().T
+        resp_np = responsibilities.detach().cpu().numpy()
 
         # Regression analysis
         density, reg_density = get_reg_density_matrix(resp_np, reg_values)
@@ -181,7 +179,7 @@ class TestGTMWorkflow:
 
         # Get responsibilities
         responsibilities, _ = gtm.project(medium_dataset)
-        resp_np = responsibilities.detach().cpu().numpy().T
+        resp_np = responsibilities.detach().cpu().numpy()
 
         # Calculate molecule coordinates
         mol_coords = calculate_latent_coords(resp_np, return_node=True)
@@ -217,8 +215,8 @@ class TestGTMWorkflow:
         ref_resp, _ = gtm1.project(ref_data)
         test_resp, _ = gtm2.project(test_data)
 
-        ref_resp_np = ref_resp.detach().cpu().numpy().T
-        test_resp_np = test_resp.detach().cpu().numpy().T
+        ref_resp_np = ref_resp.detach().cpu().numpy()
+        test_resp_np = test_resp.detach().cpu().numpy()
 
         # Convert to patterns
         ref_patterns = np.array(
@@ -275,7 +273,7 @@ class TestDataConsistency:
         responsibilities, _ = gtm.project(medium_dataset)
 
         # Check normalization
-        resp_sums = responsibilities.sum(dim=0)
+        resp_sums = responsibilities.sum(dim=1)
         assert torch.allclose(
             resp_sums,
             torch.ones(medium_dataset.shape[0], dtype=torch.float64),
@@ -283,7 +281,7 @@ class TestDataConsistency:
         )
 
         # Convert to numpy and check consistency
-        resp_np = responsibilities.detach().cpu().numpy().T
+        resp_np = responsibilities.detach().cpu().numpy()
 
         # Check that numpy version is also normalized
         np_sums = resp_np.sum(axis=1)
@@ -408,7 +406,7 @@ class TestErrorHandlingWorkflows:
 
         # Get responsibilities for full dataset
         responsibilities, _ = gtm.project(medium_dataset)
-        resp_np = responsibilities.detach().cpu().numpy().T
+        resp_np = responsibilities.detach().cpu().numpy()
 
         # Create mismatched labels (too few)
         short_labels = np.array([0, 1, 0])  # Only 3 labels for 100 samples
@@ -462,6 +460,7 @@ class TestErrorHandlingWorkflows:
             basis_width=1.0,
             reg_coeff=0.1,
             max_iter=3,
+            standardize=True
         )
 
         # Should handle extreme values (might issue warnings)

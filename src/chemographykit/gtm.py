@@ -71,6 +71,19 @@ class DataStandardizer:
 
         return result
 
+    def transform(self, X):
+        if not isinstance(X, torch.Tensor):
+            X = torch.tensor(X, dtype=torch.float64)
+        if self.with_mean:
+            if self.data_mean is None:
+                raise RuntimeError("Standardizer not fitted")
+            X = X - self.data_mean
+        if self.with_std:
+            if self.data_std is None:
+                raise RuntimeError("Standardizer not fitted")
+            X = X / torch.clamp(self.data_std, min=1e-8)
+        return X
+    
     def fit_transform(
         self, X: Union[torch.Tensor, np.ndarray], axis: int = 0
     ) -> torch.Tensor:
@@ -338,7 +351,7 @@ class VanillaGTM(BaseGTM, ABC):
         num_basis_functions: int,
         basis_width: float,
         reg_coeff: float,
-        standardize: bool = True,
+        standardize: bool = False,
         max_iter: int = 100,
         tolerance: float = 1e-3,
         n_components: int = 2,
@@ -378,13 +391,10 @@ class VanillaGTM(BaseGTM, ABC):
             assert np.sqrt(
                 num_basis_functions
             ).is_integer(), "num_basis_functions must be square"
-        elif self.n_components == 3:
-            assert round(
-                np.cbrt(num_nodes)
-            ).is_integer(), f"{num_nodes} {type(num_nodes)} must be a cube"
-            assert round(
-                np.cbrt(num_basis_functions)
-            ).is_integer(), "num_basis_functions must be a cube"
+        else:
+            raise ValueError(
+                "Num component must be 2 !"
+            )
         if num_basis_functions > num_nodes:
             raise ValueError(
                 f"num_basis_functions must be <= num_nodes (got {num_basis_functions} > {num_nodes})"
@@ -400,6 +410,8 @@ class VanillaGTM(BaseGTM, ABC):
         self.use_cholesky: bool = use_cholesky
         self.topology: str = topology
 
+        self._input_standardizer: Optional[DataStandardizer] = None
+        
         # Here we will add parameters of GTM
         nodes, mu, scaled_basis_width = self._init_grid()
         self.nodes: torch.Tensor = nodes.to(self.device).double()
@@ -497,7 +509,8 @@ class VanillaGTM(BaseGTM, ABC):
             int(np.sqrt(self.num_basis_functions)),
         )
 
-        mu = mu * (self.num_basis_functions / (self.num_basis_functions - 1))
+        k = int(np.sqrt(self.num_basis_functions))
+        mu = mu * (k / (k - 1))
         basis_width = self.basis_width * float(mu[0, 1] - mu[1, 1])
         return nodes, mu, basis_width
 
@@ -562,6 +575,22 @@ class VanillaGTM(BaseGTM, ABC):
             f"std - {matrix.std()} "
         )
 
+    def _ensure_fitted(self) -> None:
+        if self.weights is None or self.beta is None:
+            raise RuntimeError("Model is not fitted. Call fit() first.")
+        
+    def _solve_weights(self, A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        if self.use_cholesky:
+            try:
+                L = torch.linalg.cholesky(A)
+                return torch.cholesky_solve(B, L)
+            except RuntimeError:
+                pass
+        try:
+            return torch.linalg.solve(A, B)
+        except RuntimeError:
+            return torch.linalg.pinv(A) @ B
+    
     def kernel(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         """
         Compute the squared Euclidean distance matrix between two sets of points.
@@ -630,17 +659,14 @@ class VanillaGTM(BaseGTM, ABC):
         """
         G = torch.diag(responsibilities.sum(dim=1))
         # A is phi'* G * phi + lambda * I / beta
-        A = self.phi.T @ G @ self.phi + self.reg_coeff / self.beta * torch.eye(
-            self.num_basis_functions + 1, dtype=torch.double, device=self.device
-        )
+        reg = torch.eye(self.num_basis_functions + 1, dtype=torch.double, device=self.device)
+        reg[-1, -1] = 0.0
+
+        A = self.phi.T @ G @ self.phi + self.reg_coeff / self.beta * reg
         B = self.phi.T @ (responsibilities @ data)
-        if self.use_cholesky:
-            # here we can use Cholesky decomposition for numerical stability
-            L = torch.linalg.cholesky(A)
-            Y = torch.linalg.solve(L, B)
-            self.weights = torch.linalg.solve(L.T, Y)
-        else:
-            self.weights = torch.linalg.solve(A, B)
+        
+        self.weights = self._solve_weights(A, B)
+        
         distance = self.kernel(self.phi @ self.weights, data)
         self.beta = (data.shape[0] * data.shape[1]) / (
             responsibilities * distance
@@ -707,7 +733,8 @@ class VanillaGTM(BaseGTM, ABC):
 
         if self.standardize:
             # Scale the tensor using mean and standard deviation
-            x = self._standardize(x, with_mean=True, with_std=True)
+            self._input_standardizer = DataStandardizer(with_mean=True, with_std=True)
+            x = self._input_standardizer.fit_transform(x)
 
         self.data_mean = torch.mean(x, dim=0)
         self.data_std = torch.std(x, dim=0)
@@ -734,9 +761,13 @@ class VanillaGTM(BaseGTM, ABC):
                 - responsibilities: Responsibility matrix of shape (num_nodes, num_samples)
                 - llhs: Log-likelihood values for each data point
         """
+        self._ensure_fitted()
         x = x.to(self.device, dtype=torch.float64)
         if self.standardize:
-            x = self._standardize(x, with_mean=True, with_std=True)
+            if self._input_standardizer is None:
+                raise RuntimeError("Model standardizer is not fitted. Call fit() first.")
+            x = self._input_standardizer.transform(x)
+
         distance = self.kernel(self.phi @ self.weights, x)
         responsibilities, llhs = self.e_step(x, distance)
         return responsibilities.T, llhs
@@ -755,6 +786,7 @@ class VanillaGTM(BaseGTM, ABC):
         Returns:
             torch.Tensor: Transformed data in the latent space
         """
+        self._ensure_fitted()
         responsibilities, _ = self.project(data)
         # Return the mean of the posterior distribution
         return responsibilities @ self.nodes
@@ -839,7 +871,9 @@ class GTM(VanillaGTM):
         mean_nn = torch.min(lat_space_dist, dim=1).values.mean()
 
         # Calculate options for the initial beta
-        beta = mean_nn / 2
+        eps = torch.finfo(mean_nn.dtype).eps
+        beta = 2.0 / torch.clamp(mean_nn, min=eps)
+
         return beta
 
     def _pca_torch(self, data: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -974,10 +1008,12 @@ class GTM(VanillaGTM):
             TODO: check if shapes are good
         """
         ## Can't be run on GPU. see https://github.com/pytorch/pytorch/issues/71222
-        self.nodes = (self.nodes - self.nodes.mean(dim=0)) / (self.nodes.std(dim=0))
-        nodes_pca_projection = (
-            self.nodes @ eigenvectors[: self.n_components]
-        )  # TODO: check if shapes are good
+        
+        eps = torch.finfo(self.nodes.dtype).eps
+        norm_nodes = (self.nodes - self.nodes.mean(dim=0)) / torch.clamp(self.nodes.std(dim=0), min=eps)
+        
+        nodes_pca_projection = (norm_nodes @ eigenvectors[: self.n_components])
+
         return torch.linalg.lstsq(
             self.phi, nodes_pca_projection, driver="gels"
         ).solution  # .cuda()
@@ -998,11 +1034,11 @@ class GTM(VanillaGTM):
         """
         # Calculating the initial beta
         beta_1 = self._init_beta_mixture_components()
-        beta_2 = eigenvalues[self.n_components]
+        beta_2 = 1.0 / torch.clamp(eigenvalues[self.n_components].squeeze(), min=torch.finfo(eigenvalues.dtype).eps)
 
         logging.debug(f"Beta from distances: {beta_1}")
         logging.debug(f"Beta from PCA: {beta_2}")
-        return max(beta_1, beta_2)
+        return torch.minimum(beta_1, beta_2)
 
     def fit(self, x: torch.Tensor) -> None:
         """
@@ -1020,7 +1056,9 @@ class GTM(VanillaGTM):
         if self.standardize:
             # Calculate mean and standard deviation along each column (axis 0)
             # Scale the tensor using mean and standard deviation
-            x = self._standardize(x, with_mean=True, with_std=True)
+            self._input_standardizer = DataStandardizer(with_mean=True, with_std=True)
+            x = self._input_standardizer.fit_transform(x)
+            
         self.data_mean = torch.mean(x, dim=0)
         self.data_std = torch.std(x, dim=0)
         # initialise weights and beta from the data
