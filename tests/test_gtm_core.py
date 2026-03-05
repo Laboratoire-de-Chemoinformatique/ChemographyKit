@@ -184,12 +184,12 @@ class TestVanillaGTM:
 
         assert isinstance(responsibilities, torch.Tensor)
         assert isinstance(llhs, torch.Tensor)
-        assert responsibilities.shape == (25, 50)  # (num_nodes, n_samples)
+        assert responsibilities.shape == (50, 25)  # (n_samples, num_nodes)
         assert llhs.shape == (50,)  # (n_samples,)
 
         # Responsibilities should sum to 1 for each sample
         assert torch.allclose(
-            responsibilities.sum(dim=0), torch.ones(50, dtype=torch.float64), atol=1e-6
+            responsibilities.sum(dim=1), torch.ones(50, dtype=torch.float64), atol=1e-6
         )
 
         # All values should be finite
@@ -380,6 +380,7 @@ class TestEdgeCases:
             basis_width=0.5,
             reg_coeff=0.1,
             max_iter=5,
+            standardize=True
         )
 
         # Should handle this gracefully
@@ -407,3 +408,180 @@ class TestEdgeCases:
             # Should have stopped before max_iter due to convergence
             # (This is hard to test precisely without access to internal state)
             assert mock_logging.info.called
+
+    def test_project_before_fit_raises(self):
+        """Test project raises a clear error when model is not fitted."""
+        gtm = VanillaGTM(
+            num_nodes=9,
+            num_basis_functions=4,
+            basis_width=0.5,
+            reg_coeff=0.1,
+            max_iter=5,
+        )
+        data = torch.randn(10, 3, dtype=torch.float64)
+
+        with pytest.raises(RuntimeError, match="Model is not fitted"):
+            gtm.project(data)
+
+    def test_transform_before_fit_raises(self):
+        """Test transform raises a clear error when model is not fitted."""
+        gtm = VanillaGTM(
+            num_nodes=9,
+            num_basis_functions=4,
+            basis_width=0.5,
+            reg_coeff=0.1,
+            max_iter=5,
+        )
+        data = torch.randn(10, 3, dtype=torch.float64)
+
+        with pytest.raises(RuntimeError, match="Model is not fitted"):
+            gtm.transform(data)
+
+class TestGTMParity:
+    def test_solve_weights_matches_current_cholesky_implementation(self):
+        gtm = VanillaGTM(
+            num_nodes=9,
+            num_basis_functions=4,
+            basis_width=0.3,
+            reg_coeff=0.1,
+            max_iter=1,
+            use_cholesky=True,
+        )
+
+        torch.manual_seed(123)
+        dim = gtm.num_basis_functions + 1
+        out_dim = 3
+        m = torch.randn(dim, dim, dtype=torch.float64)
+        # Build a strictly SPD matrix so Cholesky is valid
+        A = m.T @ m + 1e-6 * torch.eye(dim, dtype=torch.float64)
+        B = torch.randn(dim, out_dim, dtype=torch.float64)
+
+        L = torch.linalg.cholesky(A)
+        current_impl = torch.linalg.solve(L.T, torch.linalg.solve(L, B))
+        cholesky_impl = torch.cholesky_solve(B, L)
+
+        assert torch.allclose(current_impl, cholesky_impl, atol=1e-12, rtol=1e-10)
+
+        if hasattr(gtm, "_solve_weights"):
+            solved = gtm._solve_weights(A, B)
+            assert torch.allclose(current_impl, solved, atol=1e-12, rtol=1e-10)
+
+    def test_m_step_does_not_regularize_bias(self, monkeypatch):
+        gtm = VanillaGTM(
+            num_nodes=9,
+            num_basis_functions=4,
+            basis_width=0.3,
+            reg_coeff=0.1,
+            max_iter=1,
+            use_cholesky=False,
+        )
+        n_samples, n_features = 12, 3
+        data = torch.randn(n_samples, n_features, dtype=torch.float64)
+        responsibilities = torch.rand(gtm.num_nodes, n_samples, dtype=torch.float64)
+        responsibilities = responsibilities / responsibilities.sum(dim=0, keepdim=True)
+
+        gtm.weights = torch.randn(
+            gtm.num_basis_functions + 1, n_features, dtype=torch.float64
+        )
+        gtm.beta = torch.tensor(2.0, dtype=torch.float64)
+
+        captured = {}
+        orig_solve = torch.linalg.solve
+
+        def solve_spy(A, B):
+            captured["A"] = A.detach().clone()
+            return orig_solve(A, B)
+
+        monkeypatch.setattr(torch.linalg, "solve", solve_spy)
+        beta_before = gtm.beta.clone()
+        gtm.m_step(data, responsibilities)
+
+        G = torch.diag(responsibilities.sum(dim=1))
+        base = gtm.phi.T @ G @ gtm.phi
+        delta = captured["A"] - base
+        diag = torch.diag(delta)
+
+        expected_lambda = float(gtm.reg_coeff / beta_before)
+        assert torch.allclose(
+            diag[:-1], torch.full_like(diag[:-1], expected_lambda), atol=1e-12
+        )
+        assert diag[-1].item() == pytest.approx(0.0, abs=1e-12)
+
+    def test_init_beta_mixture_components_is_inverse_distance(self, monkeypatch):
+        gtm = GTM(
+            num_nodes=4,
+            num_basis_functions=4,
+            basis_width=0.3,
+            reg_coeff=0.1,
+            pca_engine="torch",
+        )
+        gtm.weights = torch.zeros(gtm.num_basis_functions + 1, 2, dtype=torch.float64)
+
+        fake_cdist = torch.tensor(
+            [
+                [0.0, 2.0, 5.0, 6.0],
+                [2.0, 0.0, 3.0, 4.0],
+                [5.0, 3.0, 0.0, 2.0],
+                [6.0, 4.0, 2.0, 0.0],
+            ],
+            dtype=torch.float64,
+        )
+        monkeypatch.setattr(torch, "cdist", lambda *args, **kwargs: fake_cdist)
+
+        beta = gtm._init_beta_mixture_components()
+        # nearest squared distance = 4 => mean_nn = 4 => beta = 2/4 = 0.5
+        assert beta.item() == pytest.approx(0.5, rel=1e-12)
+
+    @pytest.mark.parametrize(
+        ("beta_from_nn", "eig", "expected"),
+        [
+            (0.40, 10.0, 0.10),  # min(0.4, 1/10) = 0.1
+            (0.05, 10.0, 0.05),  # min(0.05, 1/10) = 0.05
+        ],
+    )
+    def test_init_beta_uses_min_of_distance_and_inverse_eigenvalue(
+        self, monkeypatch, beta_from_nn, eig, expected
+    ):
+        gtm = GTM(
+            num_nodes=4,
+            num_basis_functions=4,
+            basis_width=0.3,
+            reg_coeff=0.1,
+            pca_engine="torch",
+        )
+        monkeypatch.setattr(
+            gtm,
+            "_init_beta_mixture_components",
+            lambda: torch.tensor(beta_from_nn, dtype=torch.float64),
+        )
+        eigenvalues = torch.tensor([2.0, 3.0, eig], dtype=torch.float64)
+        beta = gtm._init_beta(eigenvalues)
+        assert beta.item() == pytest.approx(expected, rel=1e-12)
+
+    def test_init_weights_does_not_modify_nodes(self):
+        gtm = GTM(
+            num_nodes=25,
+            num_basis_functions=16,
+            basis_width=0.3,
+            reg_coeff=0.1,
+            pca_engine="torch",
+        )
+        before = gtm.nodes.clone()
+        eigenvectors = torch.randn(gtm.n_components + 1, 7, dtype=torch.float64)
+
+        _ = gtm._init_weights(eigenvectors)
+
+        assert torch.allclose(gtm.nodes, before, atol=0.0)
+
+    def test_mu_scaling_uses_per_dimension_basis_count(self):
+        gtm = VanillaGTM(
+            num_nodes=25,
+            num_basis_functions=16,
+            basis_width=0.3,
+            reg_coeff=0.1,
+        )
+        k = int(np.sqrt(gtm.num_basis_functions))
+        unscaled_mu = gtm._rectangular_grid(k, k).to(torch.float64)
+        expected_mu = unscaled_mu * (k / (k - 1))
+
+        assert torch.allclose(gtm.mu.cpu(), expected_mu, atol=1e-12)
