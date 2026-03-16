@@ -20,6 +20,10 @@ class DataStandardizer:
     and dividing by the standard deviation. It handles NaN values appropriately
     and provides warnings for numerical issues.
 
+    Supports two modes:
+      - ``fit_transform(X)``: compute statistics from *X* and transform it.
+      - ``transform(X)``: apply previously fitted statistics to new data.
+
     Attributes:
         with_mean (bool): Whether to center the data by subtracting the mean
         with_std (bool): Whether to scale the data by dividing by standard deviation
@@ -142,6 +146,45 @@ class DataStandardizer:
                         "The standard deviation of the data is probably very close to 0."
                     )
                     X = X - mean_2
+
+        return X
+
+    def transform(self, X: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
+        """
+        Transform data using previously fitted statistics.
+
+        This method applies the mean and standard deviation computed during
+        ``fit_transform`` to new data, ensuring consistent standardization
+        between training and projection.
+
+        Args:
+            X: Input data to be standardized using the stored statistics.
+
+        Returns:
+            torch.Tensor: Standardized data tensor.
+
+        Raises:
+            RuntimeError: If ``fit_transform`` has not been called first.
+        """
+        if not isinstance(X, torch.Tensor):
+            X = torch.tensor(X, dtype=torch.float64)
+
+        if self.with_mean:
+            if self.data_mean is None:
+                raise RuntimeError(
+                    "DataStandardizer.transform() called before fit_transform(). "
+                    "Call fit_transform() first to compute statistics."
+                )
+            X = X - self.data_mean
+
+        if self.with_std:
+            if self.data_std is None:
+                raise RuntimeError(
+                    "DataStandardizer.transform() called before fit_transform(). "
+                    "Call fit_transform() first to compute statistics."
+                )
+            scale_ = torch.clamp(self.data_std, min=1e-8)
+            X = X / scale_
 
         return X
 
@@ -412,6 +455,7 @@ class VanillaGTM(BaseGTM, ABC):
         self.data_std: Optional[torch.Tensor] = None
         self.weights: Optional[torch.Tensor] = None
         self.beta: Optional[torch.Tensor] = None
+        self._fitted_standardizer: Optional[DataStandardizer] = None
 
     def _init_weights(
         self, data: torch.Tensor, *args: Any, **kwargs: Any
@@ -528,21 +572,46 @@ class VanillaGTM(BaseGTM, ABC):
         )
 
     def _standardize(
-        self, x: torch.Tensor, with_mean: bool = True, with_std: bool = True
+        self, x: torch.Tensor, with_mean: bool = True, with_std: bool = True,
+        fit: bool = True,
     ) -> torch.Tensor:
         """
         Standardize the input data using mean and standard deviation.
+
+        When ``fit=True`` (used during ``fit()``), a new ``DataStandardizer``
+        is created, fitted on *x*, and stored for later reuse.  When
+        ``fit=False`` (used during ``project()``/``transform()``), the
+        previously stored standardizer is applied so that projection uses the
+        **same** statistics as training.
 
         Args:
             x: Input data tensor
             with_mean: Whether to center the data by subtracting the mean
             with_std: Whether to scale the data by dividing by standard deviation
+            fit: If True, fit a new standardizer; otherwise reuse the stored one
 
         Returns:
             torch.Tensor: Standardized data tensor
         """
-        standardizer = DataStandardizer(with_mean, with_std)
-        x = standardizer.fit_transform(x)
+        if fit:
+            standardizer = DataStandardizer(with_mean, with_std)
+            x = standardizer.fit_transform(x)
+            self._fitted_standardizer = standardizer
+        else:
+            if self._fitted_standardizer is None:
+                # Fallback for models fitted before this change (e.g. loaded
+                # from pickle without _fitted_standardizer).  Behaves like the
+                # original code — fit fresh statistics.
+                warnings.warn(
+                    "No fitted standardizer found — falling back to per-batch "
+                    "standardization.  Re-fit the GTM to enable consistent "
+                    "projection standardization.",
+                    UserWarning,
+                )
+                standardizer = DataStandardizer(with_mean, with_std)
+                x = standardizer.fit_transform(x)
+            else:
+                x = self._fitted_standardizer.transform(x)
         return x
 
     @staticmethod
@@ -651,30 +720,47 @@ class VanillaGTM(BaseGTM, ABC):
         """
         Main training loop for the GTM model using the EM algorithm.
 
-        This method iteratively performs E-step and M-step until convergence
-        or maximum iterations are reached. It includes progress tracking and
-        convergence monitoring.
+        Automatically selects between standard and minibatch EM based on
+        dataset size.  For datasets where the full (K, N) distance matrix
+        fits in memory, standard EM is used (faster per iteration).  For
+        larger datasets, minibatch EM streams the data in chunks,
+        accumulating sufficient statistics without materializing (K, N).
 
         Args:
-            data: Training data tensor
+            data: Training data tensor of shape (N, D)
         """
-        # Initial llh
+        N, D = data.shape
+        K = self.num_nodes
+
+        # Heuristic: (K, N) float64 matrix memory in bytes
+        matrix_bytes = K * N * 8
+        # Use minibatch EM if the (K, N) matrix would exceed ~2 GB
+        use_minibatch = matrix_bytes > 2 * 1024 ** 3
+
+        if use_minibatch:
+            logging.info(
+                "Using minibatch EM (N=%d, K=%d, estimated matrix %.1f GB)",
+                N, K, matrix_bytes / 1e9,
+            )
+            self._fit_loop_minibatch(data)
+        else:
+            self._fit_loop_standard(data)
+
+    def _fit_loop_standard(self, data: torch.Tensor) -> None:
+        """Standard EM — materializes full (K, N) matrices. Fast for small N."""
         llh_old = torch.tensor(0).double()
 
-        # Initialize the distance matrix
-        init_space_posit = self.phi @ self.weights  # Initial space positions (Y-matrix)
+        init_space_posit = self.phi @ self.weights
         self.init_space_posit = deepcopy(init_space_posit)
         distances = self.kernel(init_space_posit, data)
-        # Calculate the distance matrix in the data space
         self._log_matrix_stats(distances, "First distances RBFs-data in N-dimensions")
 
-        pbar = tqdm(range(self.max_iter),colour="blue")
+        pbar = tqdm(range(self.max_iter), colour="blue")
         for index, _ in enumerate(pbar):
             responsibilities, llhs = self.e_step(data, distances)
-            llh = torch.mean(llhs)  # normalisation by data
+            llh = torch.mean(llhs)
             llh_diff = torch.abs(llh_old - llh)
 
-            # Logging part
             info = {
                 "LLh": float(torch.round(llh, decimals=5)),
                 "deltaLLh": float(torch.round(llh_diff, decimals=5)),
@@ -683,14 +769,103 @@ class VanillaGTM(BaseGTM, ABC):
             logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
             pbar.set_postfix(info)
 
-            # Convergence check part
-            if llh_diff < self.tolerance:  # Helena checks for several cycles
-                pbar.update(self.max_iter-pbar.n)
+            if llh_diff < self.tolerance:
+                pbar.update(self.max_iter - pbar.n)
                 pbar.close()
                 break
             llh_old = llh
             if index < self.max_iter - 1:
                 distances = self.m_step(data, responsibilities)
+
+    def _fit_loop_minibatch(
+        self, data: torch.Tensor, chunk_size: int = 0,
+    ) -> None:
+        """Minibatch EM — streams data in chunks for large-scale fitting.
+
+        Instead of materializing the full (K, N) distance / responsibility
+        matrices, each EM iteration processes the data in chunks and
+        accumulates the three M-step sufficient statistics:
+
+            g_k       = sum_n  R_{kn}               (K,)    — per-node mass
+            phi_R_x   = phi^T @ (R @ x)             (F, D)  — weighted data
+            beta_denom = sum_{k,n} R_{kn} * d_{kn}   scalar  — for beta update
+
+        These are all additive across data chunks, so memory stays bounded
+        at O(chunk_size * K) regardless of N.
+
+        Args:
+            data: Training data tensor of shape (N, D).
+            chunk_size: Number of molecules per chunk.  If 0 (default), an
+                appropriate size is chosen automatically.
+        """
+        N, D = data.shape
+        K = self.num_nodes
+        F = self.num_basis_functions + 1  # phi columns (incl. bias)
+
+        if chunk_size <= 0:
+            # Target ~1 GB for the (K, chunk) distance matrix in float64
+            chunk_size = max(1000, int(1e9 / (K * 8)))
+        logging.info("Minibatch EM chunk_size=%d", chunk_size)
+
+        self.init_space_posit = deepcopy(self.phi @ self.weights)
+        llh_old = torch.tensor(0.0, dtype=torch.float64, device=self.device)
+
+        pbar = tqdm(range(self.max_iter), colour="blue")
+        for iteration, _ in enumerate(pbar):
+            # ---- Chunked E-step + accumulate sufficient statistics ----------
+            Y = self.phi @ self.weights  # (K, D)
+
+            g = torch.zeros(K, dtype=torch.float64, device=self.device)
+            phi_R_x = torch.zeros(F, D, dtype=torch.float64, device=self.device)
+            beta_denom = torch.tensor(0.0, dtype=torch.float64, device=self.device)
+            llh_sum = torch.tensor(0.0, dtype=torch.float64, device=self.device)
+
+            for start in range(0, N, chunk_size):
+                end = min(start + chunk_size, N)
+                x_chunk = data[start:end]                    # (B, D)
+                dist_chunk = self.kernel(Y, x_chunk)         # (K, B)
+
+                R_chunk, llh_chunk = self.e_step(x_chunk, dist_chunk)  # (K, B), (B,)
+                llh_sum += llh_chunk.sum()
+
+                # Accumulate M-step sufficient statistics
+                g += R_chunk.sum(dim=1)                      # (K,)
+                phi_R_x += self.phi.T @ (R_chunk @ x_chunk)  # (F, D)
+                beta_denom += (R_chunk * dist_chunk).sum()
+
+            llh = llh_sum / N
+            llh_diff = torch.abs(llh_old - llh)
+
+            info = {
+                "LLh": float(torch.round(llh, decimals=5)),
+                "deltaLLh": float(torch.round(llh_diff, decimals=5)),
+                "beta": float(torch.round(self.beta, decimals=5)),
+            }
+            logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
+            pbar.set_postfix(info)
+
+            if llh_diff < self.tolerance:
+                pbar.update(self.max_iter - pbar.n)
+                pbar.close()
+                break
+            llh_old = llh
+
+            if iteration < self.max_iter - 1:
+                # ---- M-step from accumulated statistics -----------------
+                G = torch.diag(g)  # (K, K)
+                A = self.phi.T @ G @ self.phi + (
+                    self.reg_coeff / self.beta
+                ) * torch.eye(F, dtype=torch.float64, device=self.device)
+                B = phi_R_x
+
+                if self.use_cholesky:
+                    L = torch.linalg.cholesky(A)
+                    Y_sol = torch.linalg.solve(L, B)
+                    self.weights = torch.linalg.solve(L.T, Y_sol)
+                else:
+                    self.weights = torch.linalg.solve(A, B)
+
+                self.beta = (N * D) / beta_denom
 
     def fit(self, x: torch.Tensor) -> None:
         """
@@ -707,7 +882,7 @@ class VanillaGTM(BaseGTM, ABC):
 
         if self.standardize:
             # Scale the tensor using mean and standard deviation
-            x = self._standardize(x, with_mean=True, with_std=True)
+            x = self._standardize(x, with_mean=True, with_std=True, fit=True)
 
         self.data_mean = torch.mean(x, dim=0)
         self.data_std = torch.std(x, dim=0)
@@ -726,6 +901,9 @@ class VanillaGTM(BaseGTM, ABC):
         by computing their responsibilities (posterior probabilities) for
         each latent node.
 
+        Uses the standardization statistics stored during ``fit()`` so that
+        projection is consistent with training.
+
         Args:
             x: Input data tensor of shape (num_samples, num_features)
 
@@ -736,7 +914,7 @@ class VanillaGTM(BaseGTM, ABC):
         """
         x = x.to(self.device, dtype=torch.float64)
         if self.standardize:
-            x = self._standardize(x, with_mean=True, with_std=True)
+            x = self._standardize(x, with_mean=True, with_std=True, fit=False)
         distance = self.kernel(self.phi @ self.weights, x)
         responsibilities, llhs = self.e_step(x, distance)
         return responsibilities.T, llhs
@@ -1020,7 +1198,7 @@ class GTM(VanillaGTM):
         if self.standardize:
             # Calculate mean and standard deviation along each column (axis 0)
             # Scale the tensor using mean and standard deviation
-            x = self._standardize(x, with_mean=True, with_std=True)
+            x = self._standardize(x, with_mean=True, with_std=True, fit=True)
         self.data_mean = torch.mean(x, dim=0)
         self.data_std = torch.std(x, dim=0)
         # initialise weights and beta from the data
