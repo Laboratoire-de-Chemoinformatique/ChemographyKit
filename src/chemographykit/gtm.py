@@ -677,13 +677,34 @@ class VanillaGTM(BaseGTM, ABC):
         """
         Main training loop for the GTM model using the EM algorithm.
 
-        This method iteratively performs E-step and M-step until convergence
-        or maximum iterations are reached. It includes progress tracking and
-        convergence monitoring.
+        Automatically selects between standard and minibatch EM based on
+        dataset size.  For datasets where the full (K, N) distance matrix
+        fits in memory, standard EM is used (faster per iteration).  For
+        larger datasets, minibatch EM streams the data in chunks,
+        accumulating sufficient statistics without materializing (K, N).
 
         Args:
-            data: Training data tensor
+            data: Training data tensor of shape (N, D)
         """
+        N = data.shape[0]
+        K = self.num_nodes
+
+        # Heuristic: (K, N) float64 matrix memory in bytes
+        matrix_bytes = K * N * 8
+        # Use minibatch EM if the (K, N) matrix would exceed ~2 GB
+        use_minibatch = matrix_bytes > 2 * 1024 ** 3
+
+        if use_minibatch:
+            logging.info(
+                "Using minibatch EM (N=%d, K=%d, estimated matrix %.1f GB)",
+                N, K, matrix_bytes / 1e9,
+            )
+            self._fit_loop_minibatch(data)
+        else:
+            self._fit_loop_standard(data)
+
+    def _fit_loop_standard(self, data: torch.Tensor) -> None:
+        """Standard EM — materializes full (K, N) matrices. Fast for small N."""
         # Initial llh
         llh_old = torch.tensor(0).double()
 
@@ -717,6 +738,92 @@ class VanillaGTM(BaseGTM, ABC):
             llh_old = llh
             if index < self.max_iter - 1:
                 distances = self.m_step(data, responsibilities)
+
+    def _fit_loop_minibatch(
+        self, data: torch.Tensor, chunk_size: int = 0,
+    ) -> None:
+        """Minibatch EM — streams data in chunks for large-scale fitting.
+
+        Instead of materializing the full (K, N) distance / responsibility
+        matrices, each EM iteration processes the data in chunks and
+        accumulates the three M-step sufficient statistics:
+
+            g_k       = sum_n  R_{kn}               (K,)    — per-node mass
+            phi_R_x   = phi^T @ (R @ x)             (F, D)  — weighted data
+            beta_denom = sum_{k,n} R_{kn} * d_{kn}   scalar  — for beta update
+
+        These are all additive across data chunks, so memory stays bounded
+        at O(chunk_size * K) regardless of N.
+
+        Args:
+            data: Training data tensor of shape (N, D).
+            chunk_size: Number of molecules per chunk.  If 0 (default), an
+                appropriate size is chosen automatically.
+        """
+        N, D = data.shape
+        K = self.num_nodes
+        F = self.num_basis_functions + 1  # phi columns (incl. bias)
+
+        if chunk_size <= 0:
+            # Target ~1 GB for the (K, chunk) distance matrix in float64
+            chunk_size = max(1000, int(1e9 / (K * 8)))
+        logging.info("Minibatch EM chunk_size=%d", chunk_size)
+
+        self.init_space_posit = deepcopy(self.phi @ self.weights)
+        llh_old = torch.tensor(0.0, dtype=torch.float64, device=self.device)
+
+        # Regularization matrix (don't regularize the bias term)
+        reg = torch.eye(F, dtype=torch.float64, device=self.device)
+        reg[-1, -1] = 0.0
+
+        pbar = tqdm(range(self.max_iter), colour="blue")
+        for iteration, _ in enumerate(pbar):
+            # ---- Chunked E-step + accumulate sufficient statistics ----------
+            Y = self.phi @ self.weights  # (K, D)
+
+            g = torch.zeros(K, dtype=torch.float64, device=self.device)
+            phi_R_x = torch.zeros(F, D, dtype=torch.float64, device=self.device)
+            beta_denom = torch.tensor(0.0, dtype=torch.float64, device=self.device)
+            llh_sum = torch.tensor(0.0, dtype=torch.float64, device=self.device)
+
+            for start in range(0, N, chunk_size):
+                end = min(start + chunk_size, N)
+                x_chunk = data[start:end]                    # (B, D)
+                dist_chunk = self.kernel(Y, x_chunk)         # (K, B)
+
+                R_chunk, llh_chunk = self.e_step(x_chunk, dist_chunk)  # (K, B), (B,)
+                llh_sum += llh_chunk.sum()
+
+                # Accumulate M-step sufficient statistics
+                g += R_chunk.sum(dim=1)                      # (K,)
+                phi_R_x += self.phi.T @ (R_chunk @ x_chunk)  # (F, D)
+                beta_denom += (R_chunk * dist_chunk).sum()
+
+            llh = llh_sum / N
+            llh_diff = torch.abs(llh_old - llh)
+
+            info = {
+                "LLh": float(torch.round(llh, decimals=5)),
+                "deltaLLh": float(torch.round(llh_diff, decimals=5)),
+                "beta": float(torch.round(self.beta, decimals=5)),
+            }
+            logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
+            pbar.set_postfix(info)
+
+            if llh_diff < self.tolerance:
+                pbar.update(self.max_iter - pbar.n)
+                pbar.close()
+                break
+            llh_old = llh
+
+            if iteration < self.max_iter - 1:
+                # ---- M-step from accumulated statistics -----------------
+                G = torch.diag(g)  # (K, K)
+                A = self.phi.T @ G @ self.phi + self.reg_coeff / self.beta * reg
+
+                self.weights = self._solve_weights(A, phi_R_x)
+
+                self.beta = (N * D) / beta_denom
 
     def fit(self, x: torch.Tensor) -> None:
         """
