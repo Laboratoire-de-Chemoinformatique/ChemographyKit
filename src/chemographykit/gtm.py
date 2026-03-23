@@ -529,7 +529,7 @@ class VanillaGTM(BaseGTM, ABC):
 
         dist_nodes_rbfs = (
             torch.cdist(
-                self.nodes, self.mu, compute_mode="donot_use_mm_for_euclid_dist"
+                self.nodes, self.mu, compute_mode="use_mm_for_euclid_dist"
             ).to(self.device)
             ** 2
         )
@@ -603,7 +603,7 @@ class VanillaGTM(BaseGTM, ABC):
             torch.Tensor: Squared distance matrix
         """
         return (
-            torch.cdist(a, b, compute_mode="donot_use_mm_for_euclid_dist").to(
+            torch.cdist(a, b, compute_mode="use_mm_for_euclid_dist").to(
                 self.device
             )
             ** 2
@@ -962,7 +962,7 @@ class GTM(VanillaGTM):
         """
         y = self.phi @ self.weights
         lat_space_dist = (
-            torch.cdist(y, y, compute_mode="donot_use_mm_for_euclid_dist").to(
+            torch.cdist(y, y, compute_mode="use_mm_for_euclid_dist").to(
                 self.device
             )
             ** 2
