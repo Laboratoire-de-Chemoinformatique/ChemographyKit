@@ -265,12 +265,14 @@ class BaseGTM(ABC, nn.Module):
         raise NotImplementedError()
 
     @abstractmethod
-    def fit(self, data: torch.Tensor) -> None:
+    def fit(self, data: torch.Tensor, callback=None) -> None:
         """
         Fit the GTM model to the data.
 
         Args:
             data: Training data tensor
+            callback: Optional callable(iteration: int, llh: float) invoked
+                after each EM iteration.
         """
         raise NotImplementedError()
 
@@ -1203,7 +1205,7 @@ class GTM(VanillaGTM):
         logging.debug(f"Beta from PCA: {beta_2}")
         return torch.minimum(beta_1, beta_2)
 
-    def fit(self, x: torch.Tensor) -> None:
+    def fit(self, x: torch.Tensor, callback=None) -> None:
         """
         Fit the GTM model to the training data.
 
@@ -1213,6 +1215,9 @@ class GTM(VanillaGTM):
 
         Args:
             x: Training data tensor of shape (num_samples, num_features)
+            callback: Optional callable(iteration: int, llh: float) invoked
+                after each EM iteration. Raise any exception to abort early
+                (e.g. optuna.TrialPruned for Optuna pruning).
         """
         x = x.to(self.device, dtype=torch.float64)
 
@@ -1221,7 +1226,7 @@ class GTM(VanillaGTM):
             # Scale the tensor using mean and standard deviation
             self._input_standardizer = DataStandardizer(with_mean=True, with_std=True)
             x = self._input_standardizer.fit_transform(x)
-            
+
         self.data_mean = torch.mean(x, dim=0)
         self.data_std = torch.std(x, dim=0)
         # initialise weights and beta from the data
@@ -1233,4 +1238,4 @@ class GTM(VanillaGTM):
         self.weights[-1, :] = self.data_mean
         self.beta = self._init_beta(eigenvalues)
         self.beta_init = deepcopy(self.beta)
-        self._fit_loop(x)
+        self._fit_loop(x, callback=callback)
