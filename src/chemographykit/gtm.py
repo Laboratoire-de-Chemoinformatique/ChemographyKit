@@ -673,7 +673,7 @@ class VanillaGTM(BaseGTM, ABC):
         ).sum()
         return distance
 
-    def _fit_loop(self, data: torch.Tensor) -> None:
+    def _fit_loop(self, data: torch.Tensor, callback=None) -> None:
         """
         Main training loop for the GTM model using the EM algorithm.
 
@@ -685,6 +685,7 @@ class VanillaGTM(BaseGTM, ABC):
 
         Args:
             data: Training data tensor of shape (N, D)
+            callback: Optional callable(iteration, llh) — see fit().
         """
         N = data.shape[0]
         K = self.num_nodes
@@ -699,11 +700,11 @@ class VanillaGTM(BaseGTM, ABC):
                 "Using minibatch EM (N=%d, K=%d, estimated matrix %.1f GB)",
                 N, K, matrix_bytes / 1e9,
             )
-            self._fit_loop_minibatch(data)
+            self._fit_loop_minibatch(data, callback=callback)
         else:
-            self._fit_loop_standard(data)
+            self._fit_loop_standard(data, callback=callback)
 
-    def _fit_loop_standard(self, data: torch.Tensor) -> None:
+    def _fit_loop_standard(self, data: torch.Tensor, callback=None) -> None:
         """Standard EM — materializes full (K, N) matrices. Fast for small N."""
         # Initial llh
         llh_old = torch.tensor(0).double()
@@ -730,6 +731,9 @@ class VanillaGTM(BaseGTM, ABC):
             logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
             pbar.set_postfix(info)
 
+            if callback is not None:
+                callback(index, float(llh))
+
             # Convergence check part
             if llh_diff < self.tolerance:  # Helena checks for several cycles
                 pbar.update(self.max_iter-pbar.n)
@@ -740,7 +744,7 @@ class VanillaGTM(BaseGTM, ABC):
                 distances = self.m_step(data, responsibilities)
 
     def _fit_loop_minibatch(
-        self, data: torch.Tensor, chunk_size: int = 0,
+        self, data: torch.Tensor, chunk_size: int = 0, callback=None,
     ) -> None:
         """Minibatch EM — streams data in chunks for large-scale fitting.
 
@@ -810,6 +814,9 @@ class VanillaGTM(BaseGTM, ABC):
             logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
             pbar.set_postfix(info)
 
+            if callback is not None:
+                callback(iteration, float(llh))
+
             if llh_diff < self.tolerance:
                 pbar.update(self.max_iter - pbar.n)
                 pbar.close()
@@ -825,7 +832,7 @@ class VanillaGTM(BaseGTM, ABC):
 
                 self.beta = (N * D) / beta_denom
 
-    def fit(self, x: torch.Tensor) -> None:
+    def fit(self, x: torch.Tensor, callback=None) -> None:
         """
         Fit the GTM model to the training data.
 
@@ -834,6 +841,9 @@ class VanillaGTM(BaseGTM, ABC):
 
         Args:
             x: Training data tensor of shape (num_samples, num_features)
+            callback: Optional callable(iteration: int, llh: float) invoked
+                after each EM iteration. Raise any exception to abort early
+                (e.g. optuna.TrialPruned for Optuna pruning).
         """
         x = x.to(self.device, dtype=torch.float64)
         # Calculate mean and standard deviation along each column (axis 0)
@@ -850,7 +860,7 @@ class VanillaGTM(BaseGTM, ABC):
         self.weights = self._init_weights(x)
         self.weights[-1, :] = self.data_mean
         self.beta = self._init_beta()
-        self._fit_loop(x)
+        self._fit_loop(x, callback=callback)
 
     def project(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
