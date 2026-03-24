@@ -879,6 +879,32 @@ class VanillaGTM(BaseGTM, ABC):
         responsibilities, llhs = self.e_step(x, distance)
         return responsibilities.T, llhs
 
+    def score(self, x: torch.Tensor) -> float:
+        """
+        Compute the mean log-likelihood of data under the fitted model.
+
+        Unlike ``project()``, this method does not return the full (N, K)
+        responsibility matrix, making it memory-efficient for large datasets
+        where only the scalar quality metric is needed (e.g. hyperparameter
+        tuning).
+
+        Args:
+            x: Input data tensor of shape (num_samples, num_features)
+
+        Returns:
+            float: Mean per-sample log-likelihood
+        """
+        self._ensure_fitted()
+        x = x.to(self.device, dtype=torch.float64)
+        if self.standardize:
+            if self._input_standardizer is None:
+                raise RuntimeError("Model standardizer is not fitted. Call fit() first.")
+            x = self._input_standardizer.transform(x)
+
+        distance = self.kernel(self.phi @ self.weights, x)
+        _, llhs = self.e_step(x, distance)
+        return float(llhs.mean())
+
     def transform(self, data: torch.Tensor) -> torch.Tensor:
         """
         Transform data using the fitted GTM model.
