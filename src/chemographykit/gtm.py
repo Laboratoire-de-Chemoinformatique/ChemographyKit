@@ -879,7 +879,7 @@ class VanillaGTM(BaseGTM, ABC):
         responsibilities, llhs = self.e_step(x, distance)
         return responsibilities.T, llhs
 
-    def score(self, x: torch.Tensor) -> float:
+    def score(self, x: torch.Tensor, batch_size: int = 0) -> float:
         """
         Compute the mean log-likelihood of data under the fitted model.
 
@@ -888,8 +888,16 @@ class VanillaGTM(BaseGTM, ABC):
         where only the scalar quality metric is needed (e.g. hyperparameter
         tuning).
 
+        When ``batch_size > 0``, data is processed in chunks so that at most
+        ``batch_size × K`` floats are allocated at once (for the distance and
+        responsibility matrices).  This keeps GPU memory bounded regardless
+        of N — critical for ultra-large datasets (e.g. N=300k, K=2025 would
+        require ~9 GB without chunking).
+
         Args:
             x: Input data tensor of shape (num_samples, num_features)
+            batch_size: If > 0, process data in chunks of this size.
+                        If 0 (default), process all data at once.
 
         Returns:
             float: Mean per-sample log-likelihood
@@ -901,9 +909,21 @@ class VanillaGTM(BaseGTM, ABC):
                 raise RuntimeError("Model standardizer is not fitted. Call fit() first.")
             x = self._input_standardizer.transform(x)
 
-        distance = self.kernel(self.phi @ self.weights, x)
-        _, llhs = self.e_step(x, distance)
-        return float(llhs.mean())
+        N = x.shape[0]
+        y = self.phi @ self.weights
+
+        if batch_size <= 0 or batch_size >= N:
+            distance = self.kernel(y, x)
+            _, llhs = self.e_step(x, distance)
+            return float(llhs.mean())
+
+        llh_sum = torch.tensor(0.0, dtype=torch.float64, device=self.device)
+        for start in range(0, N, batch_size):
+            x_chunk = x[start : start + batch_size]
+            dist_chunk = self.kernel(y, x_chunk)
+            _, llhs_chunk = self.e_step(x_chunk, dist_chunk)
+            llh_sum += llhs_chunk.sum()
+        return float(llh_sum / N)
 
     def transform(self, data: torch.Tensor) -> torch.Tensor:
         """
