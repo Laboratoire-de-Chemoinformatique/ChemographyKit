@@ -265,14 +265,20 @@ class BaseGTM(ABC, nn.Module):
         raise NotImplementedError()
 
     @abstractmethod
-    def fit(self, data: torch.Tensor, callback=None) -> None:
+    def fit(self, data: torch.Tensor, callback=None) -> float:
         """
         Fit the GTM model to the data.
+
+        After fitting, ``self.train_llh_`` holds the final mean
+        log-likelihood and ``self.n_iter_`` the number of EM iterations run.
 
         Args:
             data: Training data tensor
             callback: Optional callable(iteration: int, llh: float) invoked
                 after each EM iteration.
+
+        Returns:
+            The final mean training log-likelihood.
         """
         raise NotImplementedError()
 
@@ -738,12 +744,17 @@ class VanillaGTM(BaseGTM, ABC):
 
             # Convergence check part
             if llh_diff < self.tolerance:  # Helena checks for several cycles
+                self.n_iter_ = index + 1
+                self.train_llh_ = float(llh)
                 pbar.update(self.max_iter-pbar.n)
                 pbar.close()
                 break
             llh_old = llh
             if index < self.max_iter - 1:
                 distances = self.m_step(data, responsibilities)
+        else:
+            self.n_iter_ = self.max_iter
+            self.train_llh_ = float(llh)
 
     def _fit_loop_minibatch(
         self, data: torch.Tensor, chunk_size: int = 0, callback=None,
@@ -820,6 +831,8 @@ class VanillaGTM(BaseGTM, ABC):
                 callback(iteration, float(llh))
 
             if llh_diff < self.tolerance:
+                self.n_iter_ = iteration + 1
+                self.train_llh_ = float(llh)
                 pbar.update(self.max_iter - pbar.n)
                 pbar.close()
                 break
@@ -833,19 +846,29 @@ class VanillaGTM(BaseGTM, ABC):
                 self.weights = self._solve_weights(A, phi_R_x)
 
                 self.beta = (N * D) / beta_denom
+        else:
+            self.n_iter_ = self.max_iter
+            self.train_llh_ = float(llh)
 
-    def fit(self, x: torch.Tensor, callback=None) -> None:
+    def fit(self, x: torch.Tensor, callback=None) -> float:
         """
         Fit the GTM model to the training data.
 
         This method initializes the model parameters and runs the EM algorithm
         to learn the optimal mapping from the latent space to the data space.
 
+        After fitting, ``self.train_llh_`` holds the final mean
+        log-likelihood and ``self.n_iter_`` the number of EM iterations run.
+
         Args:
             x: Training data tensor of shape (num_samples, num_features)
             callback: Optional callable(iteration: int, llh: float) invoked
                 after each EM iteration. Raise any exception to abort early
                 (e.g. optuna.TrialPruned for Optuna pruning).
+
+        Returns:
+            The final mean training log-likelihood (same as
+            ``self.train_llh_``).
         """
         x = x.to(self.device, dtype=torch.float64)
         # Calculate mean and standard deviation along each column (axis 0)
@@ -863,6 +886,7 @@ class VanillaGTM(BaseGTM, ABC):
         self.weights[-1, :] = self.data_mean
         self.beta = self._init_beta()
         self._fit_loop(x, callback=callback)
+        return self.train_llh_
 
     def project(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -1205,7 +1229,7 @@ class GTM(VanillaGTM):
         logging.debug(f"Beta from PCA: {beta_2}")
         return torch.minimum(beta_1, beta_2)
 
-    def fit(self, x: torch.Tensor, callback=None) -> None:
+    def fit(self, x: torch.Tensor, callback=None) -> float:
         """
         Fit the GTM model to the training data.
 
@@ -1213,11 +1237,18 @@ class GTM(VanillaGTM):
         and runs the EM algorithm to learn the optimal mapping from the latent
         space to the data space.
 
+        After fitting, ``self.train_llh_`` holds the final mean
+        log-likelihood and ``self.n_iter_`` the number of EM iterations run.
+
         Args:
             x: Training data tensor of shape (num_samples, num_features)
             callback: Optional callable(iteration: int, llh: float) invoked
                 after each EM iteration. Raise any exception to abort early
                 (e.g. optuna.TrialPruned for Optuna pruning).
+
+        Returns:
+            The final mean training log-likelihood (same as
+            ``self.train_llh_``).
         """
         x = x.to(self.device, dtype=torch.float64)
 
@@ -1239,3 +1270,4 @@ class GTM(VanillaGTM):
         self.beta = self._init_beta(eigenvalues)
         self.beta_init = deepcopy(self.beta)
         self._fit_loop(x, callback=callback)
+        return self.train_llh_
