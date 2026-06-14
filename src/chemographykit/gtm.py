@@ -7,13 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from chemographykit.metrics import (
-    SharpSafeConvergenceEngine,
-    SharpSafeStoppingConfig,
-    geometry_diagnostics_from_primitives,
-    geometry_primitives,
-    resolve_latent_points,
-)
 from sklearn.decomposition import PCA
 from torch import nn
 from tqdm.auto import tqdm
@@ -369,15 +362,6 @@ class VanillaGTM(BaseGTM, ABC):
         standardize: bool = False,
         max_iter: int = 100,
         tolerance: float = 1e-3,
-        min_iter: int = 0,
-        convergence_patience: int = 1,
-        scale_tolerance: bool = False,
-        tolerance_reference_samples: int = 5_000,
-        topology_guard: bool = False,
-        topology_check_interval: int = 10,
-        topology_check_samples: int = 256,
-        topology_k_neighbors: int = 10,
-        topology_stability_threshold: float = 0.98,
         n_components: int = 2,
         use_cholesky: bool = False,
         seed: int = 1234,
@@ -397,23 +381,6 @@ class VanillaGTM(BaseGTM, ABC):
             standardize: Whether to standardize the input data
             max_iter: Maximum number of EM iterations
             tolerance: Convergence tolerance for the EM algorithm
-            min_iter: Minimum number of EM iterations before any stopping test
-            convergence_patience: Number of consecutive successful staged
-                convergence checks required before stopping
-            scale_tolerance: Whether to tighten the LLh tolerance as the node's
-                sample count increases
-            tolerance_reference_samples: Reference sample count for the
-                scale-aware LLh tolerance
-            topology_guard: Whether to require latent neighbourhood stability
-                before declaring convergence
-            topology_check_interval: Frequency (in EM iterations) of the cheap
-                topology-stability check
-            topology_check_samples: Number of anchor points used for staged
-                topology stability checks
-            topology_k_neighbors: Local neighbourhood size used by the staged
-                stability check
-            topology_stability_threshold: Minimum mean kNN overlap between
-                successive staged checks required by the topology guard
             n_components: Number of latent space dimensions (2 or 3)
             use_cholesky: Whether to use Cholesky decomposition for numerical stability
             seed: Random seed for reproducibility
@@ -446,29 +413,7 @@ class VanillaGTM(BaseGTM, ABC):
         self.reg_coeff: float = reg_coeff
         self.standardize: bool = standardize
         self.max_iter: int = max_iter
-        self.stopping_config = SharpSafeStoppingConfig(
-            tolerance=float(tolerance),
-            min_iter=int(min_iter),
-            convergence_patience=int(convergence_patience),
-            scale_tolerance=bool(scale_tolerance),
-            tolerance_reference_samples=int(tolerance_reference_samples),
-            topology_guard=bool(topology_guard),
-            topology_check_interval=int(topology_check_interval),
-            topology_check_samples=int(topology_check_samples),
-            topology_k_neighbors=int(topology_k_neighbors),
-            topology_stability_threshold=float(topology_stability_threshold),
-        )
-        # Backward-compatible attribute mirrors for callers that still introspect GTM.
-        self.tolerance: float = self.stopping_config.tolerance
-        self.min_iter: int = self.stopping_config.min_iter
-        self.convergence_patience: int = self.stopping_config.convergence_patience
-        self.scale_tolerance: bool = self.stopping_config.scale_tolerance
-        self.tolerance_reference_samples: int = self.stopping_config.tolerance_reference_samples
-        self.topology_guard: bool = self.stopping_config.topology_guard
-        self.topology_check_interval: int = self.stopping_config.topology_check_interval
-        self.topology_check_samples: int = self.stopping_config.topology_check_samples
-        self.topology_k_neighbors: int = self.stopping_config.topology_k_neighbors
-        self.topology_stability_threshold: float = self.stopping_config.topology_stability_threshold
+        self.tolerance: float = tolerance
 
         self.use_cholesky: bool = use_cholesky
         self.topology: str = topology
@@ -757,11 +702,6 @@ class VanillaGTM(BaseGTM, ABC):
                 (e.g. optuna.TrialPruned for Optuna pruning).
         """
         llh_old = torch.tensor(0).double()
-        convergence_engine = SharpSafeConvergenceEngine(
-            self.stopping_config,
-            data=data,
-            seed=self.seed,
-        )
         self.stop_reason_ = None
 
         init_space_posit = self.phi @ self.weights
@@ -780,29 +720,14 @@ class VanillaGTM(BaseGTM, ABC):
                 "deltaLLh": float(torch.round(llh_diff, decimals=5)),
                 "beta": float(torch.round(self.beta, decimals=5)),
             }
-            should_stop, convergence_info = convergence_engine.check(
-                iteration=index,
-                llh_diff=llh_diff,
-                signature_fn=self._topology_signature,
-            )
-            info.update(
-                {
-                    "llh_tol": float(np.round(convergence_info["llh_tolerance"], 6)),
-                    "stable": bool(convergence_info.get("topology_ok", True)),
-                    "topoOverlap": float(np.round(convergence_info.get("topology_stability", float("nan")), 4)),
-                    "checks": int(convergence_info.get("converged_checks", 0)),
-                }
-            )
             logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
             pbar.set_postfix(info)
 
             if callback is not None:
                 callback(index, float(llh))
 
-            if should_stop:
-                self.stop_reason_ = (
-                    "sharp_safe_plateau" if self.topology_guard else "llh_plateau"
-                )
+            if llh_diff < self.tolerance:
+                self.stop_reason_ = "llh_plateau"
                 self.n_iter_ = index + 1
                 self.train_llh_ = float(llh)
                 pbar.update(self.max_iter - pbar.n)
@@ -815,14 +740,6 @@ class VanillaGTM(BaseGTM, ABC):
             self.n_iter_ = self.max_iter
             self.train_llh_ = float(llh)
             self.stop_reason_ = "max_iter"
-
-    def _topology_signature(self, anchor_data: torch.Tensor) -> torch.Tensor:
-        """Return the latent kNN signature used by the sharp-safe stopping policy."""
-        coords = self.transform(anchor_data)
-        return SharpSafeConvergenceEngine.latent_neighbourhood_signature(
-            coords,
-            k_neighbors=self.stopping_config.topology_k_neighbors,
-        )
 
     def fit(self, x: torch.Tensor, callback=None) -> float:
         """

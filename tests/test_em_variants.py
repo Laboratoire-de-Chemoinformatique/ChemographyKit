@@ -87,7 +87,7 @@ class TestMinibatchRemoved:
         data = torch.randn(100, 8, dtype=torch.float64)
         gtm.fit(data)
         # After fitting _fit_loop must have set stop_reason_
-        assert gtm.stop_reason_ in {"llh_plateau", "sharp_safe_plateau", "max_iter"}
+        assert gtm.stop_reason_ in {"llh_plateau", "max_iter"}
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ class TestFitContract:
         gtm = _small_gtm()
         data = torch.randn(120, 8, dtype=torch.float64)
         gtm.fit(data)
-        assert gtm.stop_reason_ in {"llh_plateau", "sharp_safe_plateau", "max_iter"}
+        assert gtm.stop_reason_ in {"llh_plateau", "max_iter"}
 
 
 # ---------------------------------------------------------------------------
