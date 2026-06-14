@@ -7,6 +7,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+from chemographykit.metrics import (
+    SharpSafeConvergenceEngine,
+    SharpSafeStoppingConfig,
+    geometry_diagnostics_from_primitives,
+    geometry_primitives,
+    resolve_latent_points,
+)
 from sklearn.decomposition import PCA
 from torch import nn
 from tqdm.auto import tqdm
@@ -362,6 +369,15 @@ class VanillaGTM(BaseGTM, ABC):
         standardize: bool = False,
         max_iter: int = 100,
         tolerance: float = 1e-3,
+        min_iter: int = 0,
+        convergence_patience: int = 1,
+        scale_tolerance: bool = False,
+        tolerance_reference_samples: int = 5_000,
+        topology_guard: bool = False,
+        topology_check_interval: int = 10,
+        topology_check_samples: int = 256,
+        topology_k_neighbors: int = 10,
+        topology_stability_threshold: float = 0.98,
         n_components: int = 2,
         use_cholesky: bool = False,
         seed: int = 1234,
@@ -381,6 +397,23 @@ class VanillaGTM(BaseGTM, ABC):
             standardize: Whether to standardize the input data
             max_iter: Maximum number of EM iterations
             tolerance: Convergence tolerance for the EM algorithm
+            min_iter: Minimum number of EM iterations before any stopping test
+            convergence_patience: Number of consecutive successful staged
+                convergence checks required before stopping
+            scale_tolerance: Whether to tighten the LLh tolerance as the node's
+                sample count increases
+            tolerance_reference_samples: Reference sample count for the
+                scale-aware LLh tolerance
+            topology_guard: Whether to require latent neighbourhood stability
+                before declaring convergence
+            topology_check_interval: Frequency (in EM iterations) of the cheap
+                topology-stability check
+            topology_check_samples: Number of anchor points used for staged
+                topology stability checks
+            topology_k_neighbors: Local neighbourhood size used by the staged
+                stability check
+            topology_stability_threshold: Minimum mean kNN overlap between
+                successive staged checks required by the topology guard
             n_components: Number of latent space dimensions (2 or 3)
             use_cholesky: Whether to use Cholesky decomposition for numerical stability
             seed: Random seed for reproducibility
@@ -413,10 +446,33 @@ class VanillaGTM(BaseGTM, ABC):
         self.reg_coeff: float = reg_coeff
         self.standardize: bool = standardize
         self.max_iter: int = max_iter
-        self.tolerance: float = tolerance
+        self.stopping_config = SharpSafeStoppingConfig(
+            tolerance=float(tolerance),
+            min_iter=int(min_iter),
+            convergence_patience=int(convergence_patience),
+            scale_tolerance=bool(scale_tolerance),
+            tolerance_reference_samples=int(tolerance_reference_samples),
+            topology_guard=bool(topology_guard),
+            topology_check_interval=int(topology_check_interval),
+            topology_check_samples=int(topology_check_samples),
+            topology_k_neighbors=int(topology_k_neighbors),
+            topology_stability_threshold=float(topology_stability_threshold),
+        )
+        # Backward-compatible attribute mirrors for callers that still introspect GTM.
+        self.tolerance: float = self.stopping_config.tolerance
+        self.min_iter: int = self.stopping_config.min_iter
+        self.convergence_patience: int = self.stopping_config.convergence_patience
+        self.scale_tolerance: bool = self.stopping_config.scale_tolerance
+        self.tolerance_reference_samples: int = self.stopping_config.tolerance_reference_samples
+        self.topology_guard: bool = self.stopping_config.topology_guard
+        self.topology_check_interval: int = self.stopping_config.topology_check_interval
+        self.topology_check_samples: int = self.stopping_config.topology_check_samples
+        self.topology_k_neighbors: int = self.stopping_config.topology_k_neighbors
+        self.topology_stability_threshold: float = self.stopping_config.topology_stability_threshold
 
         self.use_cholesky: bool = use_cholesky
         self.topology: str = topology
+        self.seed: int = seed
 
         self._input_standardizer: Optional[DataStandardizer] = None
         
@@ -432,6 +488,7 @@ class VanillaGTM(BaseGTM, ABC):
         self.data_std: Optional[torch.Tensor] = None
         self.weights: Optional[torch.Tensor] = None
         self.beta: Optional[torch.Tensor] = None
+        self.stop_reason_: Optional[str] = None
 
     def _init_weights(
         self, data: torch.Tensor, *args: Any, **kwargs: Any
@@ -665,12 +722,13 @@ class VanillaGTM(BaseGTM, ABC):
         Returns:
             torch.Tensor: Updated distance matrix between data points and mixture centers
         """
-        G = torch.diag(responsibilities.sum(dim=1))
-        # A is phi'* G * phi + lambda * I / beta
+        node_mass = responsibilities.sum(dim=1)
+        # A is phi' * diag(node_mass) * phi + lambda * I / beta
         reg = torch.eye(self.num_basis_functions + 1, dtype=torch.double, device=self.device)
         reg[-1, -1] = 0.0
 
-        A = self.phi.T @ G @ self.phi + self.reg_coeff / self.beta * reg
+        weighted_phi = self.phi * node_mass.unsqueeze(1)
+        A = self.phi.T @ weighted_phi + self.reg_coeff / self.beta * reg
         B = self.phi.T @ (responsibilities @ data)
         
         self.weights = self._solve_weights(A, B)
@@ -683,70 +741,71 @@ class VanillaGTM(BaseGTM, ABC):
 
     def _fit_loop(self, data: torch.Tensor, callback=None) -> None:
         """
-        Main training loop for the GTM model using the EM algorithm.
+        Main training loop for the GTM model using classical full-batch EM.
 
-        Automatically selects between standard and minibatch EM based on
-        dataset size.  For datasets where the full (K, N) distance matrix
-        fits in memory, standard EM is used (faster per iteration).  For
-        larger datasets, minibatch EM streams the data in chunks,
-        accumulating sufficient statistics without materializing (K, N).
+        The full (K, N) distance and responsibility matrices are materialised
+        once per iteration, giving exact sufficient statistics and stable
+        convergence regardless of dataset composition.  This is the only
+        supported training mode; stochastic minibatch EM was removed because
+        it produced poor local-minima manifold collapses on mixed corpora
+        (e.g. interleaved DEL + ChEMBL fingerprints).
 
         Args:
             data: Training data tensor of shape (N, D)
-            callback: Optional callable(iteration, llh) — see fit().
+            callback: Optional callable(iteration: int, llh: float) invoked
+                after each EM iteration.  Raise any exception to abort early
+                (e.g. optuna.TrialPruned for Optuna pruning).
         """
-        N = data.shape[0]
-        K = self.num_nodes
-
-        # Heuristic: (K, N) float64 matrix memory in bytes
-        matrix_bytes = K * N * 8
-        # Use minibatch EM if the (K, N) matrix would exceed ~2 GB
-        use_minibatch = matrix_bytes > 2 * 1024 ** 3
-
-        if use_minibatch:
-            logging.info(
-                "Using minibatch EM (N=%d, K=%d, estimated matrix %.1f GB)",
-                N, K, matrix_bytes / 1e9,
-            )
-            self._fit_loop_minibatch(data, callback=callback)
-        else:
-            self._fit_loop_standard(data, callback=callback)
-
-    def _fit_loop_standard(self, data: torch.Tensor, callback=None) -> None:
-        """Standard EM — materializes full (K, N) matrices. Fast for small N."""
-        # Initial llh
         llh_old = torch.tensor(0).double()
+        convergence_engine = SharpSafeConvergenceEngine(
+            self.stopping_config,
+            data=data,
+            seed=self.seed,
+        )
+        self.stop_reason_ = None
 
-        # Initialize the distance matrix
-        init_space_posit = self.phi @ self.weights  # Initial space positions (Y-matrix)
+        init_space_posit = self.phi @ self.weights
         self.init_space_posit = deepcopy(init_space_posit)
         distances = self.kernel(init_space_posit, data)
-        # Calculate the distance matrix in the data space
         self._log_matrix_stats(distances, "First distances RBFs-data in N-dimensions")
 
-        pbar = tqdm(range(self.max_iter),colour="blue")
+        pbar = tqdm(range(self.max_iter), colour="blue")
         for index, _ in enumerate(pbar):
             responsibilities, llhs = self.e_step(data, distances)
-            llh = torch.mean(llhs)  # normalisation by data
+            llh = torch.mean(llhs)
             llh_diff = torch.abs(llh_old - llh)
 
-            # Logging part
             info = {
                 "LLh": float(torch.round(llh, decimals=5)),
                 "deltaLLh": float(torch.round(llh_diff, decimals=5)),
                 "beta": float(torch.round(self.beta, decimals=5)),
             }
+            should_stop, convergence_info = convergence_engine.check(
+                iteration=index,
+                llh_diff=llh_diff,
+                signature_fn=self._topology_signature,
+            )
+            info.update(
+                {
+                    "llh_tol": float(np.round(convergence_info["llh_tolerance"], 6)),
+                    "stable": bool(convergence_info.get("topology_ok", True)),
+                    "topoOverlap": float(np.round(convergence_info.get("topology_stability", float("nan")), 4)),
+                    "checks": int(convergence_info.get("converged_checks", 0)),
+                }
+            )
             logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
             pbar.set_postfix(info)
 
             if callback is not None:
                 callback(index, float(llh))
 
-            # Convergence check part
-            if llh_diff < self.tolerance:  # Helena checks for several cycles
+            if should_stop:
+                self.stop_reason_ = (
+                    "sharp_safe_plateau" if self.topology_guard else "llh_plateau"
+                )
                 self.n_iter_ = index + 1
                 self.train_llh_ = float(llh)
-                pbar.update(self.max_iter-pbar.n)
+                pbar.update(self.max_iter - pbar.n)
                 pbar.close()
                 break
             llh_old = llh
@@ -755,100 +814,15 @@ class VanillaGTM(BaseGTM, ABC):
         else:
             self.n_iter_ = self.max_iter
             self.train_llh_ = float(llh)
+            self.stop_reason_ = "max_iter"
 
-    def _fit_loop_minibatch(
-        self, data: torch.Tensor, chunk_size: int = 0, callback=None,
-    ) -> None:
-        """Minibatch EM — streams data in chunks for large-scale fitting.
-
-        Instead of materializing the full (K, N) distance / responsibility
-        matrices, each EM iteration processes the data in chunks and
-        accumulates the three M-step sufficient statistics:
-
-            g_k       = sum_n  R_{kn}               (K,)    — per-node mass
-            phi_R_x   = phi^T @ (R @ x)             (F, D)  — weighted data
-            beta_denom = sum_{k,n} R_{kn} * d_{kn}   scalar  — for beta update
-
-        These are all additive across data chunks, so memory stays bounded
-        at O(chunk_size * K) regardless of N.
-
-        Args:
-            data: Training data tensor of shape (N, D).
-            chunk_size: Number of molecules per chunk.  If 0 (default), an
-                appropriate size is chosen automatically.
-        """
-        N, D = data.shape
-        K = self.num_nodes
-        F = self.num_basis_functions + 1  # phi columns (incl. bias)
-
-        if chunk_size <= 0:
-            # Target ~1 GB for the (K, chunk) distance matrix in float64
-            chunk_size = max(1000, int(1e9 / (K * 8)))
-        logging.info("Minibatch EM chunk_size=%d", chunk_size)
-
-        self.init_space_posit = deepcopy(self.phi @ self.weights)
-        llh_old = torch.tensor(0.0, dtype=torch.float64, device=self.device)
-
-        # Regularization matrix (don't regularize the bias term)
-        reg = torch.eye(F, dtype=torch.float64, device=self.device)
-        reg[-1, -1] = 0.0
-
-        pbar = tqdm(range(self.max_iter), colour="blue")
-        for iteration, _ in enumerate(pbar):
-            # ---- Chunked E-step + accumulate sufficient statistics ----------
-            Y = self.phi @ self.weights  # (K, D)
-
-            g = torch.zeros(K, dtype=torch.float64, device=self.device)
-            phi_R_x = torch.zeros(F, D, dtype=torch.float64, device=self.device)
-            beta_denom = torch.tensor(0.0, dtype=torch.float64, device=self.device)
-            llh_sum = torch.tensor(0.0, dtype=torch.float64, device=self.device)
-
-            for start in range(0, N, chunk_size):
-                end = min(start + chunk_size, N)
-                x_chunk = data[start:end]                    # (B, D)
-                dist_chunk = self.kernel(Y, x_chunk)         # (K, B)
-
-                R_chunk, llh_chunk = self.e_step(x_chunk, dist_chunk)  # (K, B), (B,)
-                llh_sum += llh_chunk.sum()
-
-                # Accumulate M-step sufficient statistics
-                g += R_chunk.sum(dim=1)                      # (K,)
-                phi_R_x += self.phi.T @ (R_chunk @ x_chunk)  # (F, D)
-                beta_denom += (R_chunk * dist_chunk).sum()
-
-            llh = llh_sum / N
-            llh_diff = torch.abs(llh_old - llh)
-
-            info = {
-                "LLh": float(torch.round(llh, decimals=5)),
-                "deltaLLh": float(torch.round(llh_diff, decimals=5)),
-                "beta": float(torch.round(self.beta, decimals=5)),
-            }
-            logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
-            pbar.set_postfix(info)
-
-            if callback is not None:
-                callback(iteration, float(llh))
-
-            if llh_diff < self.tolerance:
-                self.n_iter_ = iteration + 1
-                self.train_llh_ = float(llh)
-                pbar.update(self.max_iter - pbar.n)
-                pbar.close()
-                break
-            llh_old = llh
-
-            if iteration < self.max_iter - 1:
-                # ---- M-step from accumulated statistics -----------------
-                G = torch.diag(g)  # (K, K)
-                A = self.phi.T @ G @ self.phi + self.reg_coeff / self.beta * reg
-
-                self.weights = self._solve_weights(A, phi_R_x)
-
-                self.beta = (N * D) / beta_denom
-        else:
-            self.n_iter_ = self.max_iter
-            self.train_llh_ = float(llh)
+    def _topology_signature(self, anchor_data: torch.Tensor) -> torch.Tensor:
+        """Return the latent kNN signature used by the sharp-safe stopping policy."""
+        coords = self.transform(anchor_data)
+        return SharpSafeConvergenceEngine.latent_neighbourhood_signature(
+            coords,
+            k_neighbors=self.stopping_config.topology_k_neighbors,
+        )
 
     def fit(self, x: torch.Tensor, callback=None) -> float:
         """
@@ -979,6 +953,90 @@ class VanillaGTM(BaseGTM, ABC):
         responsibilities, _ = self.project(data)
         # Return the mean of the posterior distribution
         return responsibilities @ self.nodes
+
+    def _resolve_latent_points(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+    ) -> torch.Tensor:
+        """Return latent coordinates as a validated float64 tensor on the GTM device."""
+        self._ensure_fitted()
+        return resolve_latent_points(
+            points,
+            default_points=self.nodes,
+            device=self.device,
+            n_components=self.n_components,
+        )
+
+    def _geometry_primitives(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+        include_jacobian: bool = False,
+    ):
+        """Return GTM geometry primitives via the standalone tensor service."""
+        self._ensure_fitted()
+        return geometry_primitives(
+            points=points,
+            default_points=self.nodes,
+            mu=self.mu,
+            rbf_weights=self.weights[:-1, :],
+            inv_sigma2=1.0 / float(self._scaled_basis_width**2),
+            device=self.device,
+            n_components=self.n_components,
+            chunk_size=chunk_size,
+            include_jacobian=include_jacobian,
+        )
+
+    def jacobian(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Analytical GTM Jacobian ``∂x/∂z`` evaluated at latent coordinates."""
+        return self._geometry_primitives(
+            points,
+            chunk_size=chunk_size,
+            include_jacobian=True,
+        ).jacobian
+
+    def metric_tensor(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Return the pullback metric tensor ``J(z)^T J(z)`` on latent coordinates."""
+        primitives = self._geometry_primitives(points, chunk_size=chunk_size)
+        return primitives.metric_tensor()
+
+    def magnification(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Return the GTM magnification factor ``sqrt(det(J^T J))``."""
+        primitives = self._geometry_primitives(points, chunk_size=chunk_size)
+        return primitives.magnification()
+
+    def geometry_diagnostics(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """Return magnification and anisotropy in a single geometry pass.
+
+        This is the preferred high-level entry point for HPO and diagnostics:
+        it computes magnification and 2x2 metric condition numbers without
+        re-running the Jacobian/metric build twice.
+        """
+        diagnostics = geometry_diagnostics_from_primitives(
+            self._geometry_primitives(points, chunk_size=chunk_size)
+        )
+        return diagnostics.as_dict()
 
     def fit_transform(self, data: torch.Tensor) -> torch.Tensor:
         """
