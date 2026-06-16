@@ -709,6 +709,7 @@ class VanillaGTM(BaseGTM, ABC):
         distances = self.kernel(init_space_posit, data)
         self._log_matrix_stats(distances, "First distances RBFs-data in N-dimensions")
 
+        llh = torch.tensor(float("-inf"), dtype=torch.float64, device=self.device)
         pbar = tqdm(range(self.max_iter), colour="blue")
         for index, _ in enumerate(pbar):
             responsibilities, llhs = self.e_step(data, distances)
