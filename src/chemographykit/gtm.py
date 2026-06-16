@@ -265,12 +265,20 @@ class BaseGTM(ABC, nn.Module):
         raise NotImplementedError()
 
     @abstractmethod
-    def fit(self, data: torch.Tensor) -> None:
+    def fit(self, data: torch.Tensor, callback=None) -> float:
         """
         Fit the GTM model to the data.
 
+        After fitting, ``self.train_llh_`` holds the final mean
+        log-likelihood and ``self.n_iter_`` the number of EM iterations run.
+
         Args:
             data: Training data tensor
+            callback: Optional callable(iteration: int, llh: float) invoked
+                after each EM iteration.
+
+        Returns:
+            The final mean training log-likelihood.
         """
         raise NotImplementedError()
 
@@ -409,6 +417,7 @@ class VanillaGTM(BaseGTM, ABC):
 
         self.use_cholesky: bool = use_cholesky
         self.topology: str = topology
+        self.seed: int = seed
 
         self._input_standardizer: Optional[DataStandardizer] = None
         
@@ -424,6 +433,7 @@ class VanillaGTM(BaseGTM, ABC):
         self.data_std: Optional[torch.Tensor] = None
         self.weights: Optional[torch.Tensor] = None
         self.beta: Optional[torch.Tensor] = None
+        self.stop_reason_: Optional[str] = None
 
     def _init_weights(
         self, data: torch.Tensor, *args: Any, **kwargs: Any
@@ -529,7 +539,7 @@ class VanillaGTM(BaseGTM, ABC):
 
         dist_nodes_rbfs = (
             torch.cdist(
-                self.nodes, self.mu, compute_mode="donot_use_mm_for_euclid_dist"
+                self.nodes, self.mu, compute_mode="use_mm_for_euclid_dist"
             ).to(self.device)
             ** 2
         )
@@ -603,7 +613,7 @@ class VanillaGTM(BaseGTM, ABC):
             torch.Tensor: Squared distance matrix
         """
         return (
-            torch.cdist(a, b, compute_mode="donot_use_mm_for_euclid_dist").to(
+            torch.cdist(a, b, compute_mode="use_mm_for_euclid_dist").to(
                 self.device
             )
             ** 2
@@ -657,12 +667,13 @@ class VanillaGTM(BaseGTM, ABC):
         Returns:
             torch.Tensor: Updated distance matrix between data points and mixture centers
         """
-        G = torch.diag(responsibilities.sum(dim=1))
-        # A is phi'* G * phi + lambda * I / beta
+        node_mass = responsibilities.sum(dim=1)
+        # A is phi' * diag(node_mass) * phi + lambda * I / beta
         reg = torch.eye(self.num_basis_functions + 1, dtype=torch.double, device=self.device)
         reg[-1, -1] = 0.0
 
-        A = self.phi.T @ G @ self.phi + self.reg_coeff / self.beta * reg
+        weighted_phi = self.phi * node_mass.unsqueeze(1)
+        A = self.phi.T @ weighted_phi + self.reg_coeff / self.beta * reg
         B = self.phi.T @ (responsibilities @ data)
         
         self.weights = self._solve_weights(A, B)
@@ -673,34 +684,38 @@ class VanillaGTM(BaseGTM, ABC):
         ).sum()
         return distance
 
-    def _fit_loop(self, data: torch.Tensor) -> None:
+    def _fit_loop(self, data: torch.Tensor, callback=None) -> None:
         """
-        Main training loop for the GTM model using the EM algorithm.
+        Main training loop for the GTM model using classical full-batch EM.
 
-        This method iteratively performs E-step and M-step until convergence
-        or maximum iterations are reached. It includes progress tracking and
-        convergence monitoring.
+        The full (K, N) distance and responsibility matrices are materialised
+        once per iteration, giving exact sufficient statistics and stable
+        convergence regardless of dataset composition.  This is the only
+        supported training mode; stochastic minibatch EM was removed because
+        it produced poor local-minima manifold collapses on mixed corpora
+        (e.g. interleaved DEL + ChEMBL fingerprints).
 
         Args:
-            data: Training data tensor
+            data: Training data tensor of shape (N, D)
+            callback: Optional callable(iteration: int, llh: float) invoked
+                after each EM iteration.  Raise any exception to abort early
+                (e.g. optuna.TrialPruned for Optuna pruning).
         """
-        # Initial llh
         llh_old = torch.tensor(0).double()
+        self.stop_reason_ = None
 
-        # Initialize the distance matrix
-        init_space_posit = self.phi @ self.weights  # Initial space positions (Y-matrix)
+        init_space_posit = self.phi @ self.weights
         self.init_space_posit = deepcopy(init_space_posit)
         distances = self.kernel(init_space_posit, data)
-        # Calculate the distance matrix in the data space
         self._log_matrix_stats(distances, "First distances RBFs-data in N-dimensions")
 
-        pbar = tqdm(range(self.max_iter),colour="blue")
+        llh = torch.tensor(float("-inf"), dtype=torch.float64, device=self.device)
+        pbar = tqdm(range(self.max_iter), colour="blue")
         for index, _ in enumerate(pbar):
             responsibilities, llhs = self.e_step(data, distances)
-            llh = torch.mean(llhs)  # normalisation by data
+            llh = torch.mean(llhs)
             llh_diff = torch.abs(llh_old - llh)
 
-            # Logging part
             info = {
                 "LLh": float(torch.round(llh, decimals=5)),
                 "deltaLLh": float(torch.round(llh_diff, decimals=5)),
@@ -709,24 +724,43 @@ class VanillaGTM(BaseGTM, ABC):
             logging.info(" ".join([f"{k}: {v}" for k, v in info.items()]))
             pbar.set_postfix(info)
 
-            # Convergence check part
-            if llh_diff < self.tolerance:  # Helena checks for several cycles
-                pbar.update(self.max_iter-pbar.n)
+            if callback is not None:
+                callback(index, float(llh))
+
+            if llh_diff < self.tolerance:
+                self.stop_reason_ = "llh_plateau"
+                self.n_iter_ = index + 1
+                self.train_llh_ = float(llh)
+                pbar.update(self.max_iter - pbar.n)
                 pbar.close()
                 break
             llh_old = llh
             if index < self.max_iter - 1:
                 distances = self.m_step(data, responsibilities)
+        else:
+            self.n_iter_ = self.max_iter
+            self.train_llh_ = float(llh)
+            self.stop_reason_ = "max_iter"
 
-    def fit(self, x: torch.Tensor) -> None:
+    def fit(self, x: torch.Tensor, callback=None) -> float:
         """
         Fit the GTM model to the training data.
 
         This method initializes the model parameters and runs the EM algorithm
         to learn the optimal mapping from the latent space to the data space.
 
+        After fitting, ``self.train_llh_`` holds the final mean
+        log-likelihood and ``self.n_iter_`` the number of EM iterations run.
+
         Args:
             x: Training data tensor of shape (num_samples, num_features)
+            callback: Optional callable(iteration: int, llh: float) invoked
+                after each EM iteration. Raise any exception to abort early
+                (e.g. optuna.TrialPruned for Optuna pruning).
+
+        Returns:
+            The final mean training log-likelihood (same as
+            ``self.train_llh_``).
         """
         x = x.to(self.device, dtype=torch.float64)
         # Calculate mean and standard deviation along each column (axis 0)
@@ -743,7 +777,8 @@ class VanillaGTM(BaseGTM, ABC):
         self.weights = self._init_weights(x)
         self.weights[-1, :] = self.data_mean
         self.beta = self._init_beta()
-        self._fit_loop(x)
+        self._fit_loop(x, callback=callback)
+        return self.train_llh_
 
     def project(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -772,6 +807,52 @@ class VanillaGTM(BaseGTM, ABC):
         responsibilities, llhs = self.e_step(x, distance)
         return responsibilities.T, llhs
 
+    def score(self, x: torch.Tensor, batch_size: int = 0) -> float:
+        """
+        Compute the mean log-likelihood of data under the fitted model.
+
+        Unlike ``project()``, this method does not return the full (N, K)
+        responsibility matrix, making it memory-efficient for large datasets
+        where only the scalar quality metric is needed (e.g. hyperparameter
+        tuning).
+
+        When ``batch_size > 0``, data is processed in chunks so that at most
+        ``batch_size × K`` floats are allocated at once (for the distance and
+        responsibility matrices).  This keeps GPU memory bounded regardless
+        of N — critical for ultra-large datasets (e.g. N=300k, K=2025 would
+        require ~9 GB without chunking).
+
+        Args:
+            x: Input data tensor of shape (num_samples, num_features)
+            batch_size: If > 0, process data in chunks of this size.
+                        If 0 (default), process all data at once.
+
+        Returns:
+            float: Mean per-sample log-likelihood
+        """
+        self._ensure_fitted()
+        x = x.to(self.device, dtype=torch.float64)
+        if self.standardize:
+            if self._input_standardizer is None:
+                raise RuntimeError("Model standardizer is not fitted. Call fit() first.")
+            x = self._input_standardizer.transform(x)
+
+        N = x.shape[0]
+        y = self.phi @ self.weights
+
+        if batch_size <= 0 or batch_size >= N:
+            distance = self.kernel(y, x)
+            _, llhs = self.e_step(x, distance)
+            return float(llhs.mean())
+
+        llh_sum = torch.tensor(0.0, dtype=torch.float64, device=self.device)
+        for start in range(0, N, batch_size):
+            x_chunk = x[start : start + batch_size]
+            dist_chunk = self.kernel(y, x_chunk)
+            _, llhs_chunk = self.e_step(x_chunk, dist_chunk)
+            llh_sum += llhs_chunk.sum()
+        return float(llh_sum / N)
+
     def transform(self, data: torch.Tensor) -> torch.Tensor:
         """
         Transform data using the fitted GTM model.
@@ -790,6 +871,90 @@ class VanillaGTM(BaseGTM, ABC):
         responsibilities, _ = self.project(data)
         # Return the mean of the posterior distribution
         return responsibilities @ self.nodes
+
+    def _resolve_latent_points(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+    ) -> torch.Tensor:
+        """Return latent coordinates as a validated float64 tensor on the GTM device."""
+        self._ensure_fitted()
+        return resolve_latent_points(
+            points,
+            default_points=self.nodes,
+            device=self.device,
+            n_components=self.n_components,
+        )
+
+    def _geometry_primitives(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+        include_jacobian: bool = False,
+    ):
+        """Return GTM geometry primitives via the standalone tensor service."""
+        self._ensure_fitted()
+        return geometry_primitives(
+            points=points,
+            default_points=self.nodes,
+            mu=self.mu,
+            rbf_weights=self.weights[:-1, :],
+            inv_sigma2=1.0 / float(self._scaled_basis_width**2),
+            device=self.device,
+            n_components=self.n_components,
+            chunk_size=chunk_size,
+            include_jacobian=include_jacobian,
+        )
+
+    def jacobian(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Analytical GTM Jacobian ``∂x/∂z`` evaluated at latent coordinates."""
+        return self._geometry_primitives(
+            points,
+            chunk_size=chunk_size,
+            include_jacobian=True,
+        ).jacobian
+
+    def metric_tensor(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Return the pullback metric tensor ``J(z)^T J(z)`` on latent coordinates."""
+        primitives = self._geometry_primitives(points, chunk_size=chunk_size)
+        return primitives.metric_tensor()
+
+    def magnification(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+    ) -> torch.Tensor:
+        """Return the GTM magnification factor ``sqrt(det(J^T J))``."""
+        primitives = self._geometry_primitives(points, chunk_size=chunk_size)
+        return primitives.magnification()
+
+    def geometry_diagnostics(
+        self,
+        points: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        *,
+        chunk_size: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """Return magnification and anisotropy in a single geometry pass.
+
+        This is the preferred high-level entry point for HPO and diagnostics:
+        it computes magnification and 2x2 metric condition numbers without
+        re-running the Jacobian/metric build twice.
+        """
+        diagnostics = geometry_diagnostics_from_primitives(
+            self._geometry_primitives(points, chunk_size=chunk_size)
+        )
+        return diagnostics.as_dict()
 
     def fit_transform(self, data: torch.Tensor) -> torch.Tensor:
         """
@@ -855,7 +1020,7 @@ class GTM(VanillaGTM):
         """
         y = self.phi @ self.weights
         lat_space_dist = (
-            torch.cdist(y, y, compute_mode="donot_use_mm_for_euclid_dist").to(
+            torch.cdist(y, y, compute_mode="use_mm_for_euclid_dist").to(
                 self.device
             )
             ** 2
@@ -1040,7 +1205,7 @@ class GTM(VanillaGTM):
         logging.debug(f"Beta from PCA: {beta_2}")
         return torch.minimum(beta_1, beta_2)
 
-    def fit(self, x: torch.Tensor) -> None:
+    def fit(self, x: torch.Tensor, callback=None) -> float:
         """
         Fit the GTM model to the training data.
 
@@ -1048,8 +1213,18 @@ class GTM(VanillaGTM):
         and runs the EM algorithm to learn the optimal mapping from the latent
         space to the data space.
 
+        After fitting, ``self.train_llh_`` holds the final mean
+        log-likelihood and ``self.n_iter_`` the number of EM iterations run.
+
         Args:
             x: Training data tensor of shape (num_samples, num_features)
+            callback: Optional callable(iteration: int, llh: float) invoked
+                after each EM iteration. Raise any exception to abort early
+                (e.g. optuna.TrialPruned for Optuna pruning).
+
+        Returns:
+            The final mean training log-likelihood (same as
+            ``self.train_llh_``).
         """
         x = x.to(self.device, dtype=torch.float64)
 
@@ -1058,7 +1233,7 @@ class GTM(VanillaGTM):
             # Scale the tensor using mean and standard deviation
             self._input_standardizer = DataStandardizer(with_mean=True, with_std=True)
             x = self._input_standardizer.fit_transform(x)
-            
+
         self.data_mean = torch.mean(x, dim=0)
         self.data_std = torch.std(x, dim=0)
         # initialise weights and beta from the data
@@ -1070,4 +1245,5 @@ class GTM(VanillaGTM):
         self.weights[-1, :] = self.data_mean
         self.beta = self._init_beta(eigenvalues)
         self.beta_init = deepcopy(self.beta)
-        self._fit_loop(x)
+        self._fit_loop(x, callback=callback)
+        return self.train_llh_

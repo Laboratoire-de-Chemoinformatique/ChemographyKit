@@ -76,30 +76,17 @@ def compute_rp_coverage(
     float
         Coverage or weighted coverage in [0,1].
     """
-    # 1) Compute dictionaries of pattern -> occurrence_count for ref and test
     counts_ref = get_fingerprint_counts(ref_lib)
     counts_test = get_fingerprint_counts(test_lib)
 
-    # 2) Use dictionary-intersection logic
     if use_weight:
-        #
-        # Weighted coverage:
-        # sum_{p in both} ref_count(p) / sum_{p in ref} ref_count(p)
-        #
-        total_ref_count = sum(counts_ref.values())  # total # of comps in ref
+        total_ref_count = sum(counts_ref.values())
         if total_ref_count == 0:
             return 0.0
-        # Intersection of patterns
         common_patterns = counts_ref.keys() & counts_test.keys()
-        # Sum reference counts for these patterns
         coverage_sum = sum(counts_ref[p] for p in common_patterns)
         coverage_value = coverage_sum / total_ref_count
-
     else:
-        #
-        # Unweighted coverage:
-        # (# of patterns in both) / (# of patterns in ref)
-        #
         num_ref_patterns = len(counts_ref)
         if num_ref_patterns == 0:
             return 0.0
